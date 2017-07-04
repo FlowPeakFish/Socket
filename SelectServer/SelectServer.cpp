@@ -224,7 +224,7 @@ int main()
 		if (sockConn == INVALID_SOCKET)
 		{
 			printf("Accpet Failed");
-			return 1;//asdfasdf
+			return 1;
 		}
 		printf("接收到一个连接：%s \n", inet_ntoa(clientAddr.sin_addr));
 
