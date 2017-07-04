@@ -1,4 +1,2 @@
 # Socket
 Sample Socket
-
-asdfsadf
