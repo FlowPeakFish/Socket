@@ -9,6 +9,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "IOCPServer", "IOCPServer\IO
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SelectServer", "SelectServer\SelectServer.vcxproj", "{C4937E2B-9B07-4565-8044-BF9B3A5C109B}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Test", "Test\Test.vcxproj", "{32E81902-EE03-43D2-A0A3-FA11CCC0312D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -41,6 +43,14 @@ Global
 		{C4937E2B-9B07-4565-8044-BF9B3A5C109B}.Release|x64.Build.0 = Release|x64
 		{C4937E2B-9B07-4565-8044-BF9B3A5C109B}.Release|x86.ActiveCfg = Release|Win32
 		{C4937E2B-9B07-4565-8044-BF9B3A5C109B}.Release|x86.Build.0 = Release|Win32
+		{32E81902-EE03-43D2-A0A3-FA11CCC0312D}.Debug|x64.ActiveCfg = Debug|x64
+		{32E81902-EE03-43D2-A0A3-FA11CCC0312D}.Debug|x64.Build.0 = Debug|x64
+		{32E81902-EE03-43D2-A0A3-FA11CCC0312D}.Debug|x86.ActiveCfg = Debug|Win32
+		{32E81902-EE03-43D2-A0A3-FA11CCC0312D}.Debug|x86.Build.0 = Debug|Win32
+		{32E81902-EE03-43D2-A0A3-FA11CCC0312D}.Release|x64.ActiveCfg = Release|x64
+		{32E81902-EE03-43D2-A0A3-FA11CCC0312D}.Release|x64.Build.0 = Release|x64
+		{32E81902-EE03-43D2-A0A3-FA11CCC0312D}.Release|x86.ActiveCfg = Release|Win32
+		{32E81902-EE03-43D2-A0A3-FA11CCC0312D}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
