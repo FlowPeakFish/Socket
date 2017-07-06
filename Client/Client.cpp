@@ -83,7 +83,6 @@ int main()
 			if (senddata[0] == '\0' || (senddata[0] == '\\' &&strstr(senddata, " ") == NULL)) {
 				continue;
 			}
-			strcat(senddata, "#");
 			send(sclient, senddata, strlen(senddata), 0);
 		}
 		closesocket(sclient);
