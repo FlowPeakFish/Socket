@@ -17,6 +17,7 @@ typedef struct _PER_SOCKET_CONTEXT
 	{
 		m_Socket = INVALID_SOCKET;
 		memset(&m_ClientAddr, 0, sizeof(m_ClientAddr));
+		ZeroMemory(m_username, 40);
 	}
 
 	// 释放资源
@@ -33,9 +34,26 @@ typedef struct _PER_SOCKET_CONTEXT
 class PER_SOCKET_CONTEXT_ARR
 {
 private:
-	_PER_SOCKET_CONTEXT *SOCKET_CONTEXT_ARR[2048];
+	PER_SOCKET_CONTEXT *SOCKET_CONTEXT_ARR[2048];
 public:
 	int num = 0;//记录数目  
+
+	PER_SOCKET_CONTEXT* GetNewSocketContext(SOCKADDR_IN* addr, char* u)
+	{
+		for (int i = 0; i < 2048; i++)
+		{
+			//如果某一个IO_CONTEXT_ARRAY[i]为0，表示哪一个位可以放入PER_IO_CONTEXT  
+			if (SOCKET_CONTEXT_ARR[i] == 0)
+			{
+				SOCKET_CONTEXT_ARR[num] = new PER_SOCKET_CONTEXT();
+				memcpy(&(SOCKET_CONTEXT_ARR[num]->m_ClientAddr), addr, sizeof(SOCKADDR_IN));
+				strcpy(SOCKET_CONTEXT_ARR[num]->m_username, u);
+				num++;
+				return SOCKET_CONTEXT_ARR[num - 1];
+			}
+		}
+	}
+
 	PER_SOCKET_CONTEXT* getARR(int i)
 	{
 		return SOCKET_CONTEXT_ARR[i];
@@ -89,8 +107,11 @@ typedef struct _PER_IO_CONTEXT
 	{
 		if (m_socket != INVALID_SOCKET)
 		{
-			closesocket(m_socket);
-			m_socket = INVALID_SOCKET;
+			ZeroMemory(&m_Overlapped, sizeof(m_Overlapped));
+			ZeroMemory(&m_szBuffer, 4096);
+			m_wsaBuf.buf = m_szBuffer;
+			m_wsaBuf.len = 4096;
+			m_OpType = NONE;
 		}
 	}
 
@@ -104,9 +125,9 @@ typedef struct _PER_IO_CONTEXT
 class PER_IO_CONTEXT_ARR
 {
 private:
-	int num = 0;//记录数目  
-	_PER_IO_CONTEXT *IO_CONTEXT_ARRAY[2048];//存放数组  
+	PER_IO_CONTEXT *IO_CONTEXT_ARRAY[2048];//存放数组  
 public:
+	int num = 0;//记录数目  
 	PER_IO_CONTEXT* getARR(int i)
 	{
 		return IO_CONTEXT_ARRAY[i];
@@ -114,27 +135,16 @@ public:
 
 	PER_IO_CONTEXT* GetNewIoContext()
 	{
-		num++;
-
-		PER_IO_CONTEXT *p = new PER_IO_CONTEXT();
-
-		ZeroMemory(&p->m_Overlapped, sizeof(OVERLAPPED));
-		ZeroMemory(p->m_szBuffer, 4096);
-		p->m_socket = INVALID_SOCKET;
-		p->m_wsaBuf.buf = p->m_szBuffer;
-		p->m_wsaBuf.len = 4096;
-		p->m_OpType = NONE;
-
-		for (int i = 0; i < num; i++)
+		for (int i = 0; i < 2048; i++)
 		{
 			//如果某一个IO_CONTEXT_ARRAY[i]为0，表示哪一个位可以放入PER_IO_CONTEXT  
 			if (IO_CONTEXT_ARRAY[i] == 0)
 			{
-				IO_CONTEXT_ARRAY[i] = p;
-				break;//这里一定要加上break，不然一个socket会放在IO_CONTEXT_ARRAY的多个位置上  
+				IO_CONTEXT_ARRAY[i] = new PER_IO_CONTEXT();
+				num++;
+				return IO_CONTEXT_ARRAY[i];
 			}
 		}
-		return p;
 	}
 
 	// 从数组中移除一个指定的IoContext
@@ -358,7 +368,6 @@ DWORD WINAPI workThread(LPVOID lpParam)
 			else {
 				printf("客户端异常 %d", dwErr);
 			}
-			ArrayIoContext.RemoveContext(pIoContext);
 			continue;
 		}
 		else
@@ -420,33 +429,35 @@ DWORD WINAPI workThread(LPVOID lpParam)
 					strcpy(pIoContext->m_wsaBuf.buf, "登陆失败！");
 				}
 
+				//添加客户端信息
+				PER_SOCKET_CONTEXT* newSocketContext = ArraySocketContext.GetNewSocketContext(ClientAddr, user);
+				newSocketContext->m_Socket = pIoContext->m_socket;
+				memcpy(&(newSocketContext->m_ClientAddr), ClientAddr, sizeof(SOCKADDR_IN));
+
+				HANDLE hTemp = CreateIoCompletionPort((HANDLE)newSocketContext->m_Socket, mIoCompletionPort, (DWORD)newSocketContext, 0);
+				if (NULL == hTemp)
+				{
+					printf("执行CreateIoCompletionPort出现错误.错误代码: %d \n", GetLastError());
+					break;
+				}
+				// 给这个客户端SocketContext绑定一个Recv的计划
+				PER_IO_CONTEXT* pNewSendIoContext = ArrayIoContext.GetNewIoContext();
+				memcpy(&(pNewSendIoContext->m_wsaBuf.buf), &pIoContext->m_wsaBuf.buf, sizeof(pIoContext->m_wsaBuf.len));
+				pNewSendIoContext->m_socket = newSocketContext->m_Socket;
 				// Send投递出去
-				_PostSend(pIoContext);
+
+				_PostSend(pNewSendIoContext);
 
 				//查看是否登陆成功
 				if (ok) {
-					// 将绑定计划后的应答客户端的SocketContext放到完成端口，有相应计划完成通知我
-					PER_SOCKET_CONTEXT* newSocketContext = new PER_SOCKET_CONTEXT;
-					newSocketContext->m_Socket = pIoContext->m_socket;
-					memcpy(&(newSocketContext->m_ClientAddr), ClientAddr, sizeof(SOCKADDR_IN));
 
-					HANDLE hTemp = CreateIoCompletionPort((HANDLE)newSocketContext->m_Socket, mIoCompletionPort, (DWORD)newSocketContext, 0);
-					if (NULL == hTemp)
+					PER_IO_CONTEXT* pNewRecvIoContext = ArrayIoContext.GetNewIoContext();
+					pNewRecvIoContext->m_socket = newSocketContext->m_Socket;
+
+					if (!_PostRecv(pNewRecvIoContext))
 					{
-						printf("执行CreateIoCompletionPort出现错误.错误代码: %d \n", GetLastError());
-						break;
+						ArrayIoContext.RemoveContext(pNewRecvIoContext);
 					}
-
-					// 给这个客户端SocketContext绑定一个Recv的计划
-					PER_IO_CONTEXT* pNewIoContext = ArrayIoContext.GetNewIoContext();
-					pNewIoContext->m_OpType = RECV;
-					pNewIoContext->m_socket = newSocketContext->m_Socket;
-
-					if (!_PostRecv(pNewIoContext))
-					{
-						ArrayIoContext.RemoveContext(pNewIoContext);
-					}
-					ArraySocketContext.AddSocketArray(pNewIoContext->m_socket, ClientAddr, user);
 				}
 				// 给这个服务端SocketContext重置已绑定的Accept计划
 				pIoContext->ResetBuffer();
@@ -489,20 +500,16 @@ DWORD WINAPI workThread(LPVOID lpParam)
 					for (int i = 0; i < ArraySocketContext.num; i++)
 					{
 						cSocketContext = ArraySocketContext.getARR(i);
-						send(cSocketContext->m_Socket, p_wbuf->buf, strlen(p_wbuf->buf), 0);
-						/*
-						if ((WSASend(cSocketContext->m_Socket,
-						p_wbuf,
-						1,
-						&dwBytes,
-						dwFlags,
-						p_ol,
-						NULL) == SOCKET_ERROR) && (WSAGetLastError() != WSA_IO_PENDING))
+						// 给这个客户端SocketContext绑定一个Recv的计划
+						PER_IO_CONTEXT* pNewIoContext = ArrayIoContext.GetNewIoContext();
+						pNewIoContext->m_OpType = SEND;
+						pNewIoContext->m_socket = pIoContext->m_socket;
+
+						if ((WSASend(cSocketContext->m_Socket, p_wbuf, 1, &dwBytes, dwFlags, p_ol,
+							NULL) == SOCKET_ERROR) && (WSAGetLastError() != WSA_IO_PENDING))
 						{
-						printf("投递一个WSASend失败！");
-						return false;
+							ArrayIoContext.RemoveContext(pNewIoContext);
 						}
-						*/
 					}
 
 					pIoContext->ResetBuffer();
@@ -510,6 +517,9 @@ DWORD WINAPI workThread(LPVOID lpParam)
 				}
 			}
 			break;
+			case SEND:
+				ArrayIoContext.RemoveContext(pIoContext);
+				break;
 			default:
 				// 不应该执行到这里
 				printf("_WorkThread中的 pIoContext->m_OpType 参数异常.\n");
@@ -521,25 +531,22 @@ DWORD WINAPI workThread(LPVOID lpParam)
 	return 0;
 }
 
-// 投递SEND请求
+// 投递Send请求
 bool _PostSend(PER_IO_CONTEXT* SendIoContext)
 {
 	// 初始化变量
 	DWORD dwFlags = 0;
 	DWORD dwBytes = 0;
+	SendIoContext->m_OpType = SEND;
 	WSABUF *p_wbuf = &SendIoContext->m_wsaBuf;
 	OVERLAPPED *p_ol = &SendIoContext->m_Overlapped;
 
-	// 如果返回值错误，并且错误的代码并非是Pending的话，那就说明这个重叠请求失败了
-	if ((WSASend(SendIoContext->m_socket,
-		p_wbuf,
-		1,
-		&dwBytes,
-		dwFlags,
-		p_ol,
+	SendIoContext->ResetBuffer();
+
+	if ((WSASend(SendIoContext->m_socket, p_wbuf, 1, &dwBytes, dwFlags, p_ol,
 		NULL) == SOCKET_ERROR) && (WSAGetLastError() != WSA_IO_PENDING))
 	{
-		printf("投递一个WSASend失败！");
+		ArrayIoContext.RemoveContext(SendIoContext);
 		return false;
 	}
 	return true;
@@ -551,11 +558,11 @@ bool _PostRecv(PER_IO_CONTEXT* RecvIoContext)
 	// 初始化变量
 	DWORD dwFlags = 0;
 	DWORD dwBytes = 0;
+	RecvIoContext->m_OpType = RECV;
 	WSABUF *p_wbuf = &RecvIoContext->m_wsaBuf;
 	OVERLAPPED *p_ol = &RecvIoContext->m_Overlapped;
 
 	RecvIoContext->ResetBuffer();
-	RecvIoContext->m_OpType = RECV;
 
 	int nBytesRecv = WSARecv(RecvIoContext->m_socket, p_wbuf, 1, &dwBytes, &dwFlags, p_ol, NULL);
 
