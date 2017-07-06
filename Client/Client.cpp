@@ -67,6 +67,7 @@ int main()
 
 		if (!strcmp(recData, "µÇÂ½Ê§°Ü£¡"))
 		{
+			closesocket(sclient);
 			continue;
 		}
 		CreateThread(0, 0, workThread, (LPVOID)sclient, 0, NULL);
@@ -79,11 +80,14 @@ int main()
 			{
 				break;
 			}
+			if (senddata[0] == '\0' || (senddata[0] == '\\' &&strstr(senddata, " ") == NULL)) {
+				continue;
+			}
 			strcat(senddata, "#");
 			send(sclient, senddata, strlen(senddata), 0);
 		}
+		closesocket(sclient);
 	}
-	closesocket(sclient);
 	WSACleanup();
 	return 0;
 }

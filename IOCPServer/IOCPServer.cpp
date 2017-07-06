@@ -76,6 +76,7 @@ public:
 			if (SOCKET_CONTEXT_ARR[i] == S)
 			{
 				closesocket(SOCKET_CONTEXT_ARR[i]->m_Socket);
+				SOCKET_CONTEXT_ARR[i] = 0;
 				num--;
 				break;
 			}
@@ -164,9 +165,9 @@ public:
 };
 
 //用户名数组
-char* username[2] = { "admin","root" };
+char* username[3] = { "admin","root" ,"zz" };
 //密码数组
-char* password[2] = { "adminadmin","rootroot" };
+char* password[3] = { "adminadmin","rootroot" ,"zz" };
 
 // 同时投递的Accept请求的数量(这个要根据实际的情况灵活设置)
 #define MAX_POST_ACCEPT 10
@@ -363,7 +364,10 @@ DWORD WINAPI workThread(LPVOID lpParam)
 		{
 			DWORD dwErr = GetLastError();
 			if (dwErr == 64) {
-				printf("检测到客户端异常退出！\n");
+
+				ArrayIoContext.RemoveContext(pIoContext);
+				ArraySocketContext.RemoveContext(pListenContext);
+				printf("客户端 %s:%d 断开连接！\n", inet_ntoa(pListenContext->m_ClientAddr.sin_addr), ntohs(pListenContext->m_ClientAddr.sin_port));
 			}
 			else {
 				printf("客户端异常 %d", dwErr);
@@ -383,7 +387,7 @@ DWORD WINAPI workThread(LPVOID lpParam)
 				mAcceptExSockAddrs(pIoContext->m_wsaBuf.buf, pIoContext->m_wsaBuf.len - ((sizeof(SOCKADDR_IN) + 16) * 2),
 					sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, (LPSOCKADDR*)&LocalAddr, &localLen, (LPSOCKADDR*)&ClientAddr, &remoteLen);
 
-				printf("客户端 %s:%d 连入.\n", inet_ntoa(ClientAddr->sin_addr), ntohs(ClientAddr->sin_port));
+				printf("客户端 %s:%d 连接.\n", inet_ntoa(ClientAddr->sin_addr), ntohs(ClientAddr->sin_port));
 
 				//接收的用户名
 				char *input_username = new char[40];
@@ -421,11 +425,11 @@ DWORD WINAPI workThread(LPVOID lpParam)
 
 				if (ok)
 				{
-					printf("客户端 %s:%d 登陆成功！ \n", inet_ntoa(ClientAddr->sin_addr), ntohs(ClientAddr->sin_port));
+					printf("客户端 %s(%s:%d) 登陆成功！\n", user, inet_ntoa(ClientAddr->sin_addr), ntohs(ClientAddr->sin_port));
 					strcpy(pIoContext->m_wsaBuf.buf, "登陆成功！");
 				}
 				else {
-					printf("客户端 %s:%d 登陆失败！\n", inet_ntoa(ClientAddr->sin_addr), ntohs(ClientAddr->sin_port));
+					printf("客户端 %s(%s:%d) 登陆失败！\n", user, inet_ntoa(ClientAddr->sin_addr), ntohs(ClientAddr->sin_port));
 					strcpy(pIoContext->m_wsaBuf.buf, "登陆失败！");
 				}
 
@@ -445,7 +449,6 @@ DWORD WINAPI workThread(LPVOID lpParam)
 				memcpy(&(pNewSendIoContext->m_wsaBuf.buf), &pIoContext->m_wsaBuf.buf, sizeof(pIoContext->m_wsaBuf.len));
 				pNewSendIoContext->m_socket = newSocketContext->m_Socket;
 				// Send投递出去
-
 				_PostSend(pNewSendIoContext);
 
 				//查看是否登陆成功
@@ -466,55 +469,65 @@ DWORD WINAPI workThread(LPVOID lpParam)
 			break;
 			case RECV:
 			{
-				SOCKADDR_IN* ClientAddr = &pListenContext->m_ClientAddr;
+				if (dwBytesTransfered > 1) {
+					char *Senddata = new char[4096];
+					ZeroMemory(Senddata, 4096);
 
-				char *data = new char[4096];
-				data = strtok(pIoContext->m_wsaBuf.buf, "#");
-
-				if (data != NULL) {
-					DWORD dwFlags = 0;
-					DWORD dwBytes = 0;
-					PER_SOCKET_CONTEXT* cSocketContext = new PER_SOCKET_CONTEXT;
-					OVERLAPPED *p_ol = &pIoContext->m_Overlapped;
-					WSABUF *p_wbuf = new WSABUF;
 					char *temp = new char[4096];
 					ZeroMemory(temp, 4096);
-					p_wbuf->buf = temp;
-					p_wbuf->len = 4096;
 
-					char u[40];
+					char *sendname = new char[40];
+					ZeroMemory(sendname, 40);
+					if (pIoContext->m_wsaBuf.buf[0] == '\\') {
+
+						int i = 0;
+						while (pIoContext->m_wsaBuf.buf[i + 1] != ' ') {
+							sendname[i] = pIoContext->m_wsaBuf.buf[i + 1];
+							i++;
+						}
+						sendname[i + 1] = '\0';
+
+						strtok(pIoContext->m_wsaBuf.buf, " ");
+						temp = strtok(NULL, "#");
+						if (temp != NULL) {
+							printf("客户端 %s(%s:%d) 向 %s 发送:%s\n", pListenContext->m_username, inet_ntoa(pListenContext->m_ClientAddr.sin_addr), ntohs(pListenContext->m_ClientAddr.sin_port), sendname, temp);
+							sprintf(Senddata, "%s(%s:%d)向你发送:\n%s", pListenContext->m_username, inet_ntoa(pListenContext->m_ClientAddr.sin_addr), ntohs(pListenContext->m_ClientAddr.sin_port), temp);
+						}
+					}
+					else {
+						temp = strtok(pIoContext->m_wsaBuf.buf, "#");
+						printf("客户端 %s(%s:%d) 向大家发送:%s\n", pListenContext->m_username, inet_ntoa(pListenContext->m_ClientAddr.sin_addr), ntohs(pListenContext->m_ClientAddr.sin_port), temp);
+						sprintf(Senddata, "%s(%s:%d)向大家发送:\n%s", pListenContext->m_username, inet_ntoa(pListenContext->m_ClientAddr.sin_addr), ntohs(pListenContext->m_ClientAddr.sin_port), temp);
+					}
+
 
 					for (int i = 0; i < ArraySocketContext.num; i++)
 					{
-						cSocketContext = ArraySocketContext.getARR(i);
+						PER_SOCKET_CONTEXT* cSocketContext = ArraySocketContext.getARR(i);
 						if (cSocketContext->m_Socket == pListenContext->m_Socket) {
-							strcpy(u, cSocketContext->m_username);
+							continue;
+						}
+						//判断是否是单对单信息
+						if (sizeof(sendname) > 0 && !strcmp(sendname, cSocketContext->m_username) && strcmp(Senddata, "")) {
+							// 给这个客户端SocketContext绑定一个Recv的计划
+							PER_IO_CONTEXT* pNewSendIoContext = ArrayIoContext.GetNewIoContext();
+							memcpy(&(pNewSendIoContext->m_wsaBuf.buf), &Senddata, sizeof(Senddata));
+							pNewSendIoContext->m_socket = cSocketContext->m_Socket;
+							// Send投递出去
+							_PostSend(pNewSendIoContext);
+						}
+						else if (!strcmp(sendname, "") && strcmp(Senddata, "")) {
+							// 给这个客户端SocketContext绑定一个Recv的计划
+							PER_IO_CONTEXT* pNewSendIoContext = ArrayIoContext.GetNewIoContext();
+							memcpy(&(pNewSendIoContext->m_wsaBuf.buf), &Senddata, sizeof(Senddata));
+							pNewSendIoContext->m_socket = cSocketContext->m_Socket;
+							// Send投递出去
+							_PostSend(pNewSendIoContext);
 						}
 					}
-
-
-					printf("客户端 %s(%s:%d) 发送 %s\n", u, inet_ntoa(ClientAddr->sin_addr), ntohs(ClientAddr->sin_port), data);
-
-					sprintf(p_wbuf->buf, "%s(%s:%d)发送:%s", u, inet_ntoa(ClientAddr->sin_addr), ntohs(ClientAddr->sin_port), pIoContext->m_wsaBuf.buf);
-
-					for (int i = 0; i < ArraySocketContext.num; i++)
-					{
-						cSocketContext = ArraySocketContext.getARR(i);
-						// 给这个客户端SocketContext绑定一个Recv的计划
-						PER_IO_CONTEXT* pNewIoContext = ArrayIoContext.GetNewIoContext();
-						pNewIoContext->m_OpType = SEND;
-						pNewIoContext->m_socket = pIoContext->m_socket;
-
-						if ((WSASend(cSocketContext->m_Socket, p_wbuf, 1, &dwBytes, dwFlags, p_ol,
-							NULL) == SOCKET_ERROR) && (WSAGetLastError() != WSA_IO_PENDING))
-						{
-							ArrayIoContext.RemoveContext(pNewIoContext);
-						}
-					}
-
-					pIoContext->ResetBuffer();
-					_PostRecv(pIoContext);
 				}
+				pIoContext->ResetBuffer();
+				_PostRecv(pIoContext);
 			}
 			break;
 			case SEND:
