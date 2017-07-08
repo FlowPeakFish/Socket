@@ -372,7 +372,7 @@ DWORD WINAPI workThread(LPVOID lpParam)
 		BOOL bReturn = GetQueuedCompletionStatus(
 			mIoCompletionPort,//这个就是我们建立的那个唯一的完成端口  
 			&dwBytesTransfered,//这个是操作完成后返回的字节数 
-			(PULONG_PTR)&pListenContext,//这个是我们建立完成端口的时候绑定的那个自定义结构体参数  
+			(PULONG_PTR)&pListenContext,//这个是我们建立完成端口的时候绑定的那个sockt结构体
 			&pOverlapped,//这个是我们在连入Socket的时候一起建立的那个重叠结构  
 			INFINITE);//等待完成端口的超时时间，如果线程不需要做其他的事情，那就INFINITE
 
@@ -457,7 +457,7 @@ DWORD WINAPI workThread(LPVOID lpParam)
 				}
 
 				//无论是否登陆成功，都要反馈一个结果给客户端 登陆成功 or 登陆失败
-				//通过Socket结构体数组得到一个新的Socket结构体，并将用户性保存进去
+				//通过Socket结构体数组得到一个新的Socket结构体，并将用户信息保存进去
 				PER_SOCKET_CONTEXT* newSocketContext = ArraySocketContext.GetNewSocketContext(ClientAddr, user);
 				//将Socket结构体保存到Socket结构体数组中新获得的Socket结构体中
 				newSocketContext->m_Socket = pIoContext->m_socket;
@@ -489,7 +489,7 @@ DWORD WINAPI workThread(LPVOID lpParam)
 						ArrayIoContext.RemoveContext(pNewRecvIoContext);
 					}
 				}
-				//将之前的Accept的网络操作结构体重置buffer，再次投递PostSend，让该网络操作继续Accept
+				//将之前的Accept的网络操作结构体重置buffer，让该网络操作继续Accept
 				pIoContext->ResetBuffer();
 				_PostAccept(pIoContext);
 			}
