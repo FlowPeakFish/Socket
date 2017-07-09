@@ -9,13 +9,11 @@
 
 enum OPERATION_TYPE { ACCEPT, RECV, SEND, NONE };
 
-//Socket结构体，包含每个客户端的socket，地址端口，用户名
-typedef struct PER_SOCKET_CONTEXT
-{
+struct PER_SOCKET_CONTEXT {
 	SOCKET      m_Socket;                                  // 每一个客户端连接的Socket
 	SOCKADDR_IN m_ClientAddr;                              // 客户端的地址
 	char m_username[40];
-	// 初始化
+
 	PER_SOCKET_CONTEXT()
 	{
 		m_Socket = INVALID_SOCKET;
@@ -89,7 +87,7 @@ public:
 	}
 };
 //网络操作结构体，包含Overlapped，关联的socket，缓冲区以及这个操作的类型，accpet，received还是send
-typedef struct PER_IO_CONTEXT
+struct PER_IO_CONTEXT
 {
 	OVERLAPPED     m_Overlapped;                               // 每一个重叠网络操作的重叠结构(针对每一个Socket的每一个操作，都要有一个           
 	SOCKET         m_socket;                                     // 这个网络操作所使用的Socket
@@ -126,7 +124,8 @@ typedef struct PER_IO_CONTEXT
 	{
 		ZeroMemory(m_szBuffer, MAX_DATA_LENGTH);
 	}
-} PER_IO_CONTEXT;
+};
+
 //网络操作结构体数组的类，包含上面网络操作接头体数组，并对改数组增删改
 class PER_IO_CONTEXT_ARR
 {

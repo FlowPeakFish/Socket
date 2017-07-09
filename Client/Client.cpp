@@ -35,11 +35,10 @@ int main()
 		printf("请输入用户名：");
 		gets_s(username);
 
-		strcat(username, "#");
 		printf("请输入密码：");
 		gets_s(password);
 
-		strcat(username, password);
+		sprintf_s(senddata, sizeof(senddata), "%s#%s",username, password);
 
 		sclient = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 		if (sclient == INVALID_SOCKET)
