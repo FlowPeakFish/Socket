@@ -346,7 +346,7 @@ int main()
 		gets_s(st);
 
 		if (!strcmp("exit", st))
-		{
+		{  
 			run = false;
 		}
 	}
@@ -384,7 +384,6 @@ DWORD WINAPI workThread(LPVOID lpParam)
 			DWORD dwErr = GetLastError();
 			//错误代码64，客户端closesocket
 			if (dwErr == 64) {
-
 				ArrayIoContext.RemoveContext(pIoContext);
 				ArraySocketContext.RemoveContext(pListenContext);
 				printf_s("客户端 %s:%d 断开连接！\n", inet_ntoa(pListenContext->m_ClientAddr.sin_addr), ntohs(pListenContext->m_ClientAddr.sin_port));
