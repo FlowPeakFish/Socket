@@ -58,7 +58,7 @@ int main()
 			return 3;
 		}
 
-		send(sclient, username, strlen(username), 0);
+		send(sclient, senddata, strlen(senddata), 0);
 
 		char recData[255];
 		int ret = recv(sclient, recData, 255, 0);

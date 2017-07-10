@@ -9,83 +9,6 @@
 
 enum OPERATION_TYPE { ACCEPT, RECV, SEND, NONE };
 
-struct PER_SOCKET_CONTEXT {
-	SOCKET      m_Socket;                                  // 每一个客户端连接的Socket
-	SOCKADDR_IN m_ClientAddr;                              // 客户端的地址
-	char m_username[40];
-
-	PER_SOCKET_CONTEXT()
-	{
-		m_Socket = INVALID_SOCKET;
-		memset(&m_ClientAddr, 0, sizeof(m_ClientAddr));
-		ZeroMemory(m_username, 40);
-	}
-
-	// 释放资源
-	~PER_SOCKET_CONTEXT()
-	{
-		if (m_Socket != INVALID_SOCKET)
-		{
-			closesocket(m_Socket);
-			m_Socket = INVALID_SOCKET;
-		}
-	}
-};
-
-//Socket结构体数组的类，包含上面Socket组合结构体数组，并对改数组增删改
-class PER_SOCKET_CONTEXT_ARR
-{
-private:
-	PER_SOCKET_CONTEXT *SOCKET_CONTEXT_ARR[2048];
-public:
-	int num = 0;//记录数目  
-
-	PER_SOCKET_CONTEXT* GetNewSocketContext(SOCKADDR_IN* addr, char* u)
-	{
-		for (int i = 0; i < 2048; i++)
-		{
-			//如果某一个IO_CONTEXT_ARRAY[i]为0，表示哪一个位可以放入PER_IO_CONTEXT  
-			if (SOCKET_CONTEXT_ARR[i] == 0)
-			{
-				SOCKET_CONTEXT_ARR[num] = new PER_SOCKET_CONTEXT();
-				memcpy(&(SOCKET_CONTEXT_ARR[num]->m_ClientAddr), addr, sizeof(SOCKADDR_IN));
-				strcpy_s(SOCKET_CONTEXT_ARR[num]->m_username, strlen(u) + 1, u);
-				num++;
-				return SOCKET_CONTEXT_ARR[num - 1];
-			}
-		}
-		return NULL;
-	}
-
-	PER_SOCKET_CONTEXT* getARR(int i)
-	{
-		return SOCKET_CONTEXT_ARR[i];
-	}
-
-	void AddSocketArray(SOCKET S, SOCKADDR_IN* addr, char* u)
-	{
-		SOCKET_CONTEXT_ARR[num] = new PER_SOCKET_CONTEXT();
-		SOCKET_CONTEXT_ARR[num]->m_Socket = S;
-		memcpy(&(SOCKET_CONTEXT_ARR[num]->m_ClientAddr), addr, sizeof(SOCKADDR_IN));
-		strcpy_s(SOCKET_CONTEXT_ARR[num]->m_username, strlen(u) + 1, u);
-		num++;
-	}
-
-	// 从数组中移除一个指定的IoContext
-	void RemoveContext(PER_SOCKET_CONTEXT* S)
-	{
-		for (int i = 0; i < num; i++)
-		{
-			if (SOCKET_CONTEXT_ARR[i] == S)
-			{
-				closesocket(SOCKET_CONTEXT_ARR[i]->m_Socket);
-				SOCKET_CONTEXT_ARR[i] = 0;
-				num--;
-				break;
-			}
-		}
-	}
-};
 //网络操作结构体，包含Overlapped，关联的socket，缓冲区以及这个操作的类型，accpet，received还是send
 struct PER_IO_CONTEXT
 {
@@ -130,9 +53,16 @@ struct PER_IO_CONTEXT
 class PER_IO_CONTEXT_ARR
 {
 private:
-	PER_IO_CONTEXT *IO_CONTEXT_ARRAY[2048];//存放数组  
+	PER_IO_CONTEXT *IO_CONTEXT_ARRAY[64];//存放数组  
 public:
 	int num = 0;//记录数目  
+
+	PER_IO_CONTEXT_ARR() {
+		for (int i = 0; i < 64; i++) {
+			IO_CONTEXT_ARRAY[i] = 0;
+		}
+	}
+
 	PER_IO_CONTEXT* getARR(int i)
 	{
 		return IO_CONTEXT_ARRAY[i];
@@ -140,10 +70,10 @@ public:
 
 	PER_IO_CONTEXT* GetNewIoContext()
 	{
-		for (int i = 0; i < 2048; i++)
+		for (int i = 0; i < 64; i++)
 		{
 			//如果某一个IO_CONTEXT_ARRAY[i]为0，表示哪一个位可以放入PER_IO_CONTEXT  
-			if (IO_CONTEXT_ARRAY[i] == 0)
+			if (IO_CONTEXT_ARRAY[i] == NULL)
 			{
 				IO_CONTEXT_ARRAY[i] = new PER_IO_CONTEXT();
 				num++;
@@ -154,9 +84,26 @@ public:
 	}
 
 	// 从数组中移除一个指定的IoContext
+	void DEL()
+	{
+		for (int i = 0; i < 64; i++)
+		{
+			if (IO_CONTEXT_ARRAY[i] != 0)
+			{
+				IO_CONTEXT_ARRAY[i]->~PER_IO_CONTEXT();
+				IO_CONTEXT_ARRAY[i] = 0;
+				num--;
+				if (num == 0) {
+					break;
+				}
+			}
+		}
+	}
+
+	// 从数组中移除一个指定的IoContext
 	void RemoveContext(PER_IO_CONTEXT* pContext)
 	{
-		for (int i = 0; i < num; i++)
+		for (int i = 0; i < 64; i++)
 		{
 			if (IO_CONTEXT_ARRAY[i] == pContext)
 			{
@@ -169,6 +116,78 @@ public:
 	}
 };
 
+struct PER_SOCKET_CONTEXT {
+	SOCKET      m_Socket;                                  // 每一个客户端连接的Socket
+	SOCKADDR_IN m_ClientAddr;                              // 客户端的地址
+	char m_username[40];
+	//创建一个网络操作结构体数组的句柄
+	PER_IO_CONTEXT_ARR* ArrayIoContext = new PER_IO_CONTEXT_ARR;
+
+	PER_SOCKET_CONTEXT()
+	{
+		m_Socket = INVALID_SOCKET;
+		memset(&m_ClientAddr, 0, sizeof(m_ClientAddr));
+		ZeroMemory(m_username, 40);
+	}
+
+	// 释放资源
+	~PER_SOCKET_CONTEXT()
+	{
+		if (m_Socket != INVALID_SOCKET)
+		{
+			ArrayIoContext->DEL();
+			closesocket(m_Socket);
+			m_Socket = INVALID_SOCKET;
+			memset(&m_ClientAddr, 0, sizeof(m_ClientAddr));
+			ZeroMemory(m_username, 40);
+		}
+	}
+};
+
+//Socket结构体数组的类，包含上面Socket组合结构体数组，并对改数组增删改
+class PER_SOCKET_CONTEXT_ARR
+{
+private:
+	PER_SOCKET_CONTEXT *SOCKET_CONTEXT_ARR[2048];
+public:
+	int num = 0;//记录数目  
+
+	PER_SOCKET_CONTEXT* GetNewSocketContext(SOCKADDR_IN* addr, char* u)
+	{
+		for (int i = 0; i < 2048; i++)
+		{
+			//如果某一个IO_CONTEXT_ARRAY[i]为0，表示哪一个位可以放入PER_IO_CONTEXT  
+			if (SOCKET_CONTEXT_ARR[i] == 0)
+			{
+				SOCKET_CONTEXT_ARR[num] = new PER_SOCKET_CONTEXT();
+				memcpy(&(SOCKET_CONTEXT_ARR[num]->m_ClientAddr), addr, sizeof(SOCKADDR_IN));
+				strcpy_s(SOCKET_CONTEXT_ARR[num]->m_username, strlen(u) + 1, u);
+				num++;
+				return SOCKET_CONTEXT_ARR[num - 1];
+			}
+		}
+		return NULL;
+	}
+
+	PER_SOCKET_CONTEXT* getARR(int i)
+	{
+		return SOCKET_CONTEXT_ARR[i];
+	}
+
+	// 从数组中移除一个指定的IoContext
+	void RemoveContext(PER_SOCKET_CONTEXT* S)
+	{
+		for (int i = 0; i < num; i++)
+		{
+			if (SOCKET_CONTEXT_ARR[i] == S)
+			{
+				SOCKET_CONTEXT_ARR[i]->~PER_SOCKET_CONTEXT();
+				num--;
+				break;
+			}
+		}
+	}
+};
 //用户名数组
 char* username[3] = { "admin","root" ,"zz" };
 //密码数组
@@ -181,8 +200,6 @@ HANDLE mIoCompletionPort;
 
 //创建一个Socket结构体数组的句柄
 PER_SOCKET_CONTEXT_ARR ArraySocketContext;
-//创建一个网络操作结构体数组的句柄
-PER_IO_CONTEXT_ARR ArrayIoContext;
 
 //AcceptEx的GUID，用于导出AcceptEx函数指针
 GUID GuidAcceptEx = WSAID_ACCEPTEX;
@@ -204,6 +221,8 @@ bool _PostSend(PER_IO_CONTEXT* pIoContext);
 bool _PostRecv(PER_IO_CONTEXT* pIoContext);
 //声明投递Accept请求，收到一个连接请求会通知完成端口
 bool _PostAccept(PER_IO_CONTEXT* pAcceptIoContext);
+//声明投递结束请求，发送完结束信息后通知完成端口
+bool _PostEnd(PER_IO_CONTEXT* pAcceptIoContext);
 
 int main()
 {
@@ -326,11 +345,11 @@ int main()
 	for (int i = 0; i < MAX_POST_ACCEPT; i++)
 	{
 		//通过网络操作结构体数组获得一个新的网络操作结构体
-		PER_IO_CONTEXT* newAcceptIoContext = ArrayIoContext.GetNewIoContext();
+		PER_IO_CONTEXT* newAcceptIoContext = ListenContext->ArrayIoContext->GetNewIoContext();
 		//投递Send请求，发送完消息后会通知完成端口，
 		if (_PostAccept(newAcceptIoContext) == false)
 		{
-			ArrayIoContext.RemoveContext(newAcceptIoContext);
+			ListenContext->ArrayIoContext->RemoveContext(newAcceptIoContext);
 			return false;
 		}
 	}
@@ -346,7 +365,7 @@ int main()
 		gets_s(st);
 
 		if (!strcmp("exit", st))
-		{  
+		{
 			run = false;
 		}
 	}
@@ -384,9 +403,8 @@ DWORD WINAPI workThread(LPVOID lpParam)
 			DWORD dwErr = GetLastError();
 			//错误代码64，客户端closesocket
 			if (dwErr == 64) {
-				ArrayIoContext.RemoveContext(pIoContext);
-				ArraySocketContext.RemoveContext(pListenContext);
 				printf_s("客户端 %s:%d 断开连接！\n", inet_ntoa(pListenContext->m_ClientAddr.sin_addr), ntohs(pListenContext->m_ClientAddr.sin_port));
+				ArraySocketContext.RemoveContext(pListenContext);
 			}
 			else {
 				printf_s("客户端异常断开 %d", dwErr);
@@ -470,22 +488,24 @@ DWORD WINAPI workThread(LPVOID lpParam)
 					break;
 				}
 				//给这个新得到的Socket结构体绑定一个PostSend操作，将客户端是否登陆成功的结果发送回去，发送操作完成，通知完成端口
-				PER_IO_CONTEXT* pNewSendIoContext = ArrayIoContext.GetNewIoContext();
+				PER_IO_CONTEXT* pNewSendIoContext = newSocketContext->ArrayIoContext->GetNewIoContext();
 				memcpy(&(pNewSendIoContext->m_wsaBuf.buf), &pIoContext->m_wsaBuf.buf, sizeof(pIoContext->m_wsaBuf.len));
 				pNewSendIoContext->m_socket = newSocketContext->m_Socket;
-				// Send投递出去
-				_PostSend(pNewSendIoContext);
 
 				//查看是否登陆成功
 				if (ok) {
+					_PostSend(pNewSendIoContext);
 					//给这个新得到的Socket结构体绑定一个PostRevc操作，将客户端是否登陆成功的结果发送回去，发送操作完成，通知完成端口
-					PER_IO_CONTEXT* pNewRecvIoContext = ArrayIoContext.GetNewIoContext();
+					PER_IO_CONTEXT* pNewRecvIoContext = newSocketContext->ArrayIoContext->GetNewIoContext();
 					pNewRecvIoContext->m_socket = newSocketContext->m_Socket;
 
 					if (!_PostRecv(pNewRecvIoContext))
 					{
-						ArrayIoContext.RemoveContext(pNewRecvIoContext);
+						newSocketContext->ArrayIoContext->RemoveContext(pNewRecvIoContext);
 					}
+				}
+				else {
+					_PostEnd(pNewSendIoContext);
 				}
 				//将之前的Accept的网络操作结构体重置buffer，让该网络操作继续Accept
 				pIoContext->ResetBuffer();
@@ -525,7 +545,7 @@ DWORD WINAPI workThread(LPVOID lpParam)
 						//判断是否是单对单信息
 						if (strlen(sendname) > 0 && !strcmp(sendname, cSocketContext->m_username) && strlen(Senddata) > 0) {
 							// 给这个客户端SocketContext绑定一个Recv的计划
-							PER_IO_CONTEXT* pNewSendIoContext = ArrayIoContext.GetNewIoContext();
+							PER_IO_CONTEXT* pNewSendIoContext = cSocketContext->ArrayIoContext->GetNewIoContext();
 							memcpy(&(pNewSendIoContext->m_wsaBuf.buf), &Senddata, sizeof(Senddata));
 							pNewSendIoContext->m_socket = cSocketContext->m_Socket;
 							// Send投递出去
@@ -533,8 +553,8 @@ DWORD WINAPI workThread(LPVOID lpParam)
 						}//判断是否不是单对单消息，且消息有长度
 						else if (strlen(sendname) == 0 && strlen(Senddata) > 0) {
 							// 给这个客户端SocketContext绑定一个Recv的计划
-							PER_IO_CONTEXT* pNewSendIoContext = ArrayIoContext.GetNewIoContext();
-							memcpy(&(pNewSendIoContext->m_wsaBuf.buf), &Senddata, sizeof(Senddata));
+							PER_IO_CONTEXT* pNewSendIoContext = cSocketContext->ArrayIoContext->GetNewIoContext();
+							memcpy((pNewSendIoContext->m_szBuffer), Senddata, strlen(Senddata) + 1);
 							pNewSendIoContext->m_socket = cSocketContext->m_Socket;
 							// Send投递出去
 							_PostSend(pNewSendIoContext);
@@ -547,7 +567,11 @@ DWORD WINAPI workThread(LPVOID lpParam)
 			break;
 			case SEND:
 				//发送完消息后，将包含网络操作的结构体删除
-				ArrayIoContext.RemoveContext(pIoContext);
+				pListenContext->ArrayIoContext->RemoveContext(pIoContext);
+				break;
+			case NONE:
+				//发送完消息后，将包含网络操作的结构体删除
+				ArraySocketContext.RemoveContext(pListenContext);
 				break;
 			default:
 				// 不应该执行到这里
@@ -561,23 +585,38 @@ DWORD WINAPI workThread(LPVOID lpParam)
 }
 
 //定义投递Send请求，发送完消息后会通知完成端口
+bool _PostEnd(PER_IO_CONTEXT* SendIoContext)
+{
+	// 初始化变量
+	DWORD dwFlags = 0;
+	DWORD dwBytes = 0;
+	SendIoContext->m_OpType = NONE;
+
+	if ((WSASend(SendIoContext->m_socket, &SendIoContext->m_wsaBuf, 1, &dwBytes, dwFlags, &SendIoContext->m_Overlapped,
+		NULL) == SOCKET_ERROR) && (WSAGetLastError() != WSA_IO_PENDING))
+	{
+		//.RemoveContext(SendIoContext);
+		return false;
+	}
+	SendIoContext->ResetBuffer();
+	return true;
+}
+
+//定义投递Send请求，发送完消息后会通知完成端口
 bool _PostSend(PER_IO_CONTEXT* SendIoContext)
 {
 	// 初始化变量
 	DWORD dwFlags = 0;
 	DWORD dwBytes = 0;
 	SendIoContext->m_OpType = SEND;
-	WSABUF *p_wbuf = &SendIoContext->m_wsaBuf;
-	OVERLAPPED *p_ol = &SendIoContext->m_Overlapped;
 
-	SendIoContext->ResetBuffer();
-
-	if ((WSASend(SendIoContext->m_socket, p_wbuf, 1, &dwBytes, dwFlags, p_ol,
+	if ((WSASend(SendIoContext->m_socket, &SendIoContext->m_wsaBuf, 1, &dwBytes, dwFlags, &SendIoContext->m_Overlapped,
 		NULL) == SOCKET_ERROR) && (WSAGetLastError() != WSA_IO_PENDING))
 	{
-		ArrayIoContext.RemoveContext(SendIoContext);
+		//.RemoveContext(SendIoContext);
 		return false;
 	}
+	SendIoContext->ResetBuffer();
 	return true;
 }
 
