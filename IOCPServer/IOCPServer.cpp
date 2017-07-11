@@ -155,7 +155,7 @@ public:
 				memcpy(&(SOCKET_CONTEXT_ARR[num]->m_ClientAddr), addr, sizeof(SOCKADDR_IN));
 				strcpy_s(SOCKET_CONTEXT_ARR[num]->m_username, strlen(u) + 1, u);
 				num++;
-				return SOCKET_CONTEXT_ARR[num - 1];
+				return SOCKET_CONTEXT_ARR[i];
 			}
 		}
 		return NULL;
