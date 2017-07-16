@@ -1,7 +1,9 @@
 #include "stdafx.h"
 #include "stdio.h"
 #include "winsock2.h" 
-#pragma comment(lib,"ws2_32.lib")  
+#include "ws2tcpip.h" 
+#include "mswsock.h"
+#pragma comment(lib,"ws2_32.lib") 
 
 //用户名数组
 char* username[3] = { "admin","root" ,"zz" };
@@ -9,9 +11,9 @@ char* username[3] = { "admin","root" ,"zz" };
 char* password[3] = { "adminadmin","rootroot" ,"zzzz" };
 
 //用户名数组
-char* Susername[3] = { "admin","root" ,"zz" };
+char* Susername[1] = { "login" };
 //密码数组
-char* Spassword[3] = { "adminadmin","rootroot" ,"zzzz" };
+char* Spassword[1] = { "login"};
 
 DWORD WINAPI workThread(LPVOID lpParam)
 {

@@ -203,7 +203,9 @@ GUID GuidGetAcceptExSockAddrs = WSAID_GETACCEPTEXSOCKADDRS;
 LPFN_GETACCEPTEXSOCKADDRS mAcceptExSockAddrs;
 
 //接下来用来Listen的Socket结构体
-PER_SOCKET_CONTEXT* ListenContext;
+PER_SOCKET_CONTEXT* tListenContext;
+//接下来用来Listen的Socket结构体
+PER_SOCKET_CONTEXT* uListenContext;
 
 //声明用来完成端口操作的线程
 DWORD WINAPI workThread(LPVOID lpParam);
@@ -251,11 +253,11 @@ int main()
 	struct sockaddr_in ServerAddress;
 
 	// 生成用于监听的Socket的信息
-	ListenContext = new PER_SOCKET_CONTEXT;
+	tListenContext = new PER_SOCKET_CONTEXT;
 
 	// 需要使用重叠IO，必须得使用WSASocket来建立Socket，才可以支持重叠IO操作
-	ListenContext->m_Socket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
-	if (ListenContext->m_Socket == INVALID_SOCKET)
+	tListenContext->m_Socket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
+	if (tListenContext->m_Socket == INVALID_SOCKET)
 	{
 		printf_s("初始化Socket失败，错误代码: %d.\n", WSAGetLastError());
 	}
@@ -271,27 +273,27 @@ int main()
 	ServerAddress.sin_port = htons(9999);
 
 	// 绑定地址和端口
-	if (bind(ListenContext->m_Socket, (struct sockaddr *) &ServerAddress, sizeof(ServerAddress)) == SOCKET_ERROR)
+	if (bind(tListenContext->m_Socket, (struct sockaddr *) &ServerAddress, sizeof(ServerAddress)) == SOCKET_ERROR)
 	{
 		printf_s("bind()函数执行错误.\n");
 		return 4;
 	}
 
 	// 开始对这个ListenContext里面的socket所绑定的地址端口进行监听
-	if (listen(ListenContext->m_Socket, SOMAXCONN) == SOCKET_ERROR)
+	if (listen(tListenContext->m_Socket, SOMAXCONN) == SOCKET_ERROR)
 	{
 		printf_s("Listen()函数执行出现错误.\n");
 		return 5;
 	}
 
 	//将这个将ListenSocket结构体放到完成端口中，有结果告诉我，并将监听ListenContext传进去
-	if ((CreateIoCompletionPort((HANDLE)ListenContext->m_Socket, mIoCompletionPort, (DWORD)ListenContext, 0) == NULL))
+	if ((CreateIoCompletionPort((HANDLE)tListenContext->m_Socket, mIoCompletionPort, (DWORD)tListenContext, 0) == NULL))
 	{
 		printf_s("绑定服务端SocketContext至完成端口失败！错误代码: %d/n", WSAGetLastError());
-		if (ListenContext->m_Socket != INVALID_SOCKET)
+		if (tListenContext->m_Socket != INVALID_SOCKET)
 		{
-			closesocket(ListenContext->m_Socket);
-			ListenContext->m_Socket = INVALID_SOCKET;
+			closesocket(tListenContext->m_Socket);
+			tListenContext->m_Socket = INVALID_SOCKET;
 		}
 		return 3;
 	}
@@ -299,11 +301,24 @@ int main()
 	{
 		printf_s("Listen Socket绑定完成端口 完成.\n");
 	}
+	//循环10次
+	for (int i = 0; i < MAX_POST_ACCEPT; i++)
+	{
+		//通过网络操作结构体数组获得一个新的网络操作结构体
+		PER_IO_CONTEXT* newAcceptIoContext = tListenContext->GetNewIoContext();
+		//投递Send请求，发送完消息后会通知完成端口，
+		if (_PostAccept(newAcceptIoContext) == false)
+		{
+			tListenContext->RemoveContext(newAcceptIoContext);
+			return false;
+		}
+	}
+	printf_s("投递 %d 个AcceptEx请求完毕 \n", MAX_POST_ACCEPT);
 
 	DWORD dwBytes = 0;
 	//使用WSAIoctl，通过GuidAcceptEx(AcceptEx的GUID)，获取AcceptEx函数指针
 	if (SOCKET_ERROR == WSAIoctl(
-		ListenContext->m_Socket,
+		tListenContext->m_Socket,
 		SIO_GET_EXTENSION_FUNCTION_POINTER,
 		&GuidAcceptEx,
 		sizeof(GuidAcceptEx),
@@ -319,7 +334,7 @@ int main()
 
 	//使用WSAIoctl，通过GuidGetAcceptExSockAddrs(AcceptExSockaddrs的GUID)，获取AcceptExSockaddrs函数指针
 	if (SOCKET_ERROR == WSAIoctl(
-		ListenContext->m_Socket,
+		tListenContext->m_Socket,
 		SIO_GET_EXTENSION_FUNCTION_POINTER,
 		&GuidGetAcceptExSockAddrs,
 		sizeof(GuidGetAcceptExSockAddrs),
@@ -332,20 +347,6 @@ int main()
 		printf_s("WSAIoctl 未能获取GuidGetAcceptExSockAddrs函数指针。错误代码: %d\n", WSAGetLastError());
 		return 7;
 	}
-
-	//循环10次
-	for (int i = 0; i < MAX_POST_ACCEPT; i++)
-	{
-		//通过网络操作结构体数组获得一个新的网络操作结构体
-		PER_IO_CONTEXT* newAcceptIoContext = ListenContext->GetNewIoContext();
-		//投递Send请求，发送完消息后会通知完成端口，
-		if (_PostAccept(newAcceptIoContext) == false)
-		{
-			ListenContext->RemoveContext(newAcceptIoContext);
-			return false;
-		}
-	}
-	printf_s("投递 %d 个AcceptEx请求完毕 \n", MAX_POST_ACCEPT);
 
 	printf_s("INFO:服务器端已启动......\n");
 
@@ -667,7 +668,7 @@ bool _PostAccept(PER_IO_CONTEXT* AcceptIoContext)
 	}
 
 	// 投递AcceptEx
-	if (mAcceptEx(ListenContext->m_Socket, AcceptIoContext->m_socket, p_wbuf->buf, p_wbuf->len - ((sizeof(SOCKADDR_IN) + 16) * 2),
+	if (mAcceptEx(tListenContext->m_Socket, AcceptIoContext->m_socket, p_wbuf->buf, p_wbuf->len - ((sizeof(SOCKADDR_IN) + 16) * 2),
 		sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, &dwBytes, p_ol) == FALSE)
 	{
 		if (WSAGetLastError() != WSA_IO_PENDING)
