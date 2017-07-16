@@ -1,4 +1,4 @@
-#include "stdafx.h"
+ï»¿#include "stdafx.h"
 #include "stdio.h"
 #include "winsock2.h" 
 #pragma comment(lib,"ws2_32.lib")  
@@ -6,7 +6,7 @@
 DWORD WINAPI workThread(LPVOID lpParam)
 {
 	SOCKET client = (SOCKET)lpParam;
-	// Ñ­»·´¦ÀíÇëÇó
+	// å¾ªç¯å¤„ç†è¯·æ±‚
 	while (true)
 	{
 		char recData[4096];
@@ -32,13 +32,13 @@ int main()
 		char username[80];
 		char password[40];
 
-		printf("ÇëÊäÈëÓÃ»§Ãû£º");
+		printf("è¯·è¾“å…¥ç”¨æˆ·åï¼š");
 		gets_s(username);
 
-		printf("ÇëÊäÈëÃÜÂë£º");
+		printf("è¯·è¾“å…¥å¯†ç ï¼š");
 		gets_s(password);
 
-		sprintf_s(senddata, sizeof(senddata), "%s#%s",username, password);
+		sprintf_s(senddata, sizeof(senddata), "%s#%s", username, password);
 
 		sclient = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 		if (sclient == INVALID_SOCKET)
@@ -64,7 +64,7 @@ int main()
 		int ret = recv(sclient, recData, 255, 0);
 		printf("%s \n", recData);
 
-		if (!strcmp(recData, "µÇÂ½Ê§°Ü£¡"))
+		if (!strcmp(recData, "ç™»é™†å¤±è´¥ï¼"))
 		{
 			closesocket(sclient);
 			continue;

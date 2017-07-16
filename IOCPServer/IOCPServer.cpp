@@ -386,7 +386,7 @@ DWORD WINAPI workThread(LPVOID lpParam)
 			&pOverlapped,//这个是我们在连入Socket的时候一起建立的那个重叠结构  
 			INFINITE);//等待完成端口的超时时间，如果线程不需要做其他的事情，那就INFINITE
 
-		//通过这个Overlapped，得到包含这个的网错操作结构体
+					  //通过这个Overlapped，得到包含这个的网错操作结构体
 		PER_IO_CONTEXT* pIoContext = CONTAINING_RECORD(pOverlapped, PER_IO_CONTEXT, m_Overlapped);
 
 		// 判断是否有客户端断开了
