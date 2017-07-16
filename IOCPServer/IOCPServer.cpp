@@ -8,6 +8,7 @@
 #define MAX_DATA_LENGTH 4096
 
 enum OPERATION_TYPE { ACCEPT, RECV, SEND, NONE };
+enum NET_TYPE { Intranet,Extranet};
 
 //网络操作结构体，包含Overlapped，关联的socket，缓冲区以及这个操作的类型，accpet，received还是send
 struct PER_IO_CONTEXT
@@ -53,8 +54,8 @@ struct PER_SOCKET_CONTEXT {
 	SOCKET      m_Socket;                                  // 每一个客户端连接的Socket
 	SOCKADDR_IN m_ClientAddr;                              // 客户端的地址
 	char m_username[40];
+
 	//创建一个网络操作结构体数组的句柄
-	//PER_IO_CONTEXT_ARR* ArrayIoContext = new PER_IO_CONTEXT_ARR;
 	PER_IO_CONTEXT *ArrayIoContext[64];
 
 	int num;
@@ -286,35 +287,6 @@ int main()
 		return 5;
 	}
 
-	//将这个将ListenSocket结构体放到完成端口中，有结果告诉我，并将监听ListenContext传进去
-	if ((CreateIoCompletionPort((HANDLE)tListenContext->m_Socket, mIoCompletionPort, (DWORD)tListenContext, 0) == NULL))
-	{
-		printf_s("绑定服务端SocketContext至完成端口失败！错误代码: %d/n", WSAGetLastError());
-		if (tListenContext->m_Socket != INVALID_SOCKET)
-		{
-			closesocket(tListenContext->m_Socket);
-			tListenContext->m_Socket = INVALID_SOCKET;
-		}
-		return 3;
-	}
-	else
-	{
-		printf_s("Listen Socket绑定完成端口 完成.\n");
-	}
-	//循环10次
-	for (int i = 0; i < MAX_POST_ACCEPT; i++)
-	{
-		//通过网络操作结构体数组获得一个新的网络操作结构体
-		PER_IO_CONTEXT* newAcceptIoContext = tListenContext->GetNewIoContext();
-		//投递Send请求，发送完消息后会通知完成端口，
-		if (_PostAccept(newAcceptIoContext) == false)
-		{
-			tListenContext->RemoveContext(newAcceptIoContext);
-			return false;
-		}
-	}
-	printf_s("投递 %d 个AcceptEx请求完毕 \n", MAX_POST_ACCEPT);
-
 	DWORD dwBytes = 0;
 	//使用WSAIoctl，通过GuidAcceptEx(AcceptEx的GUID)，获取AcceptEx函数指针
 	if (SOCKET_ERROR == WSAIoctl(
@@ -347,6 +319,38 @@ int main()
 		printf_s("WSAIoctl 未能获取GuidGetAcceptExSockAddrs函数指针。错误代码: %d\n", WSAGetLastError());
 		return 7;
 	}
+
+	//将这个将ListenSocket结构体放到完成端口中，有结果告诉我，并将监听ListenContext传进去
+	if ((CreateIoCompletionPort((HANDLE)tListenContext->m_Socket, mIoCompletionPort, (DWORD)tListenContext, 0) == NULL))
+	{
+		printf_s("绑定服务端SocketContext至完成端口失败！错误代码: %d/n", WSAGetLastError());
+		if (tListenContext->m_Socket != INVALID_SOCKET)
+		{
+			closesocket(tListenContext->m_Socket);
+			tListenContext->m_Socket = INVALID_SOCKET;
+		}
+		return 3;
+	}
+	else
+	{
+		printf_s("Listen Socket绑定完成端口 完成.\n");
+	}
+
+	
+
+	//循环10次
+	for (int i = 0; i < MAX_POST_ACCEPT; i++)
+	{
+		//通过网络操作结构体数组获得一个新的网络操作结构体
+		PER_IO_CONTEXT* newAcceptIoContext = tListenContext->GetNewIoContext();
+		//投递Send请求，发送完消息后会通知完成端口，
+		if (_PostAccept(newAcceptIoContext) == false)
+		{
+			tListenContext->RemoveContext(newAcceptIoContext);
+			return false;
+		}
+	}
+	printf_s("投递 %d 个AcceptEx请求完毕 \n", MAX_POST_ACCEPT);
 
 	printf_s("INFO:服务器端已启动......\n");
 
@@ -420,7 +424,7 @@ DWORD WINAPI workThread(LPVOID lpParam)
 				mAcceptExSockAddrs(pIoContext->m_wsaBuf.buf, pIoContext->m_wsaBuf.len - ((sizeof(SOCKADDR_IN) + 16) * 2),
 					sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, (LPSOCKADDR*)&LocalAddr, &localLen, (LPSOCKADDR*)&ClientAddr, &remoteLen);
 
-				char IPAddr[20];
+				char IPAddr[16];
 				inet_ntop(AF_INET, &ClientAddr->sin_addr, IPAddr, 16);
 				printf_s("客户端 %s:%d 连接.\n", IPAddr, ntohs(ClientAddr->sin_port));
 
