@@ -8,6 +8,7 @@
 #define MAX_DATA_LENGTH 4096
 
 enum OPERATION_TYPE { ACCEPT, RECV, SEND, NONE };
+enum NET_TYPE { Intranet, Extranet };
 
 //网络操作结构体，包含Overlapped，关联的socket，缓冲区以及这个操作的类型，accpet，received还是send
 struct IO_CONTEXT
@@ -127,7 +128,7 @@ struct SOCKET_CONTEXT {
 	{
 		if (m_Socket != INVALID_SOCKET)
 		{
-			DEL();
+			delete ArrayIoContext;
 			closesocket(m_Socket);
 			m_Socket = INVALID_SOCKET;
 			memset(&m_ClientAddr, 0, sizeof(m_ClientAddr));
@@ -493,7 +494,7 @@ DWORD WINAPI workThread(LPVOID lpParam)
 				}
 				//给这个新得到的Socket结构体绑定一个PostSend操作，将客户端是否登陆成功的结果发送回去，发送操作完成，通知完成端口
 				IO_CONTEXT* pNewSendIoContext = newSocketContext->GetNewIoContext();
-				memcpy(&(pNewSendIoContext->Buffer), &pIoContext->Buffer, MAX_DATA_LENGTH);
+				memcpy(&(pNewSendIoContext->m_wsaBuf.buf), &pIoContext->m_wsaBuf.buf, sizeof(pIoContext->m_wsaBuf.len));
 				pNewSendIoContext->m_socket = newSocketContext->m_Socket;
 
 				//查看是否登陆成功
@@ -562,7 +563,7 @@ DWORD WINAPI workThread(LPVOID lpParam)
 						else if (strlen(sendname) == 0 && strlen(Senddata) > 0) {
 							// 给这个客户端SocketContext绑定一个Recv的计划
 							IO_CONTEXT* pNewSendIoContext = cSocketContext->GetNewIoContext();
-							memcpy((pNewSendIoContext->Buffer), Senddata, strlen(Senddata) + 1);
+							memcpy((pNewSendIoContext->m_szBuffer), Senddata, strlen(Senddata) + 1);
 							pNewSendIoContext->m_socket = cSocketContext->m_Socket;
 							// Send投递出去
 							_PostSend(pNewSendIoContext);

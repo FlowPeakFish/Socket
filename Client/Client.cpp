@@ -19,9 +19,8 @@ DWORD WINAPI workThread(LPVOID lpParam)
 
 int main()
 {
-	WORD sockVersion = MAKEWORD(2, 2);
-	WSADATA data;
-	if (WSAStartup(sockVersion, &data) != 0)
+	WSADATA wsdata;
+	if (WSAStartup(MAKEWORD(2, 2), &wsdata) != 0)
 	{
 		return 1;
 	}

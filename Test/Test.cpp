@@ -3,60 +3,51 @@
 #include "winsock2.h" 
 #pragma comment(lib,"ws2_32.lib")  
 
-int i = 0;
-int num = 0;
+DWORD WINAPI procRECV(LPVOID p);
 
-DWORD WINAPI workThread(LPVOID lpParam)
+int main()
 {
+	for (int i = 0; i < 100; i++) {
+		CreateThread(NULL, 0, procRECV, NULL, 0, 0);
+	}
 	while (true) {
+		Sleep(1000);
+	}
+	return 0;
+}
+DWORD WINAPI procRECV(LPVOID p) {
+	int n = 1;
+	int i = 0;
+	char buf[100] = "admin#adminadmin";
+	char rec[100];
+	while (true)
+	{
 		WORD sockVersion = MAKEWORD(2, 2);
 		WSADATA data;
 		if (WSAStartup(sockVersion, &data) != 0)
 		{
-			printf("Init Windows Socket Failed");
-			return 1;
+			return 0;
 		}
-
-		SOCKET sclient = socket(AF_INET, SOCK_STREAM, 0);
-		if (sclient == INVALID_SOCKET)
-		{
-			printf("Create Socket Failed");
-			return 1;
-		}
-
-		sockaddr_in serAddr;
+		SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
+		SOCKADDR_IN serAddr;
 		serAddr.sin_family = AF_INET;
 		serAddr.sin_port = htons(9999);
 		serAddr.sin_addr.S_un.S_addr = inet_addr("127.0.0.1");
-		if (connect(sclient, (sockaddr *)&serAddr, sizeof(serAddr)) == SOCKET_ERROR)
+		int re = connect(s, (SOCKADDR*)&serAddr, sizeof(SOCKADDR));
+		if (re == SOCKET_ERROR)
 		{
-			printf("Connect Server error = %d\n", WSAGetLastError());
-			closesocket(sclient);
-			return 1;
+			printf("连接失败：%d\n", WSAGetLastError());
+			return 0;
 		}
-
-		send(sclient, "admin#adminadmin", 17, 0);
-
-		char recData[255];
-		int ret = recv(sclient, recData, 255, 0);
-		if (ret > 0)
-		{
-			printf("%s", recData);
-			num++;
-			//printf("%s",recData);
-		}
-		closesocket(sclient);
+		send(s, buf, 100, 0);
+		memset(rec, 0, 100);
+		recv(s, rec, 100, 0);
+		printf("第%d次连接，线程：%d收到消息：%s\n", n, GetCurrentThreadId(), rec);
+		closesocket(s);
 		WSACleanup();
+		n++;
+		Sleep(1000);
 	}
 	return 0;
-}
 
-int main()
-{
-	for (i = 0; i < 1000; i++) {
-		Sleep(50);
-		CreateThread(NULL, 0, workThread, NULL, 0, NULL);
-	}
-	getchar();
-	return 0;
 }
