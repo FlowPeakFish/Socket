@@ -7,7 +7,7 @@ DWORD WINAPI procRECV(LPVOID p);
 
 int main()
 {
-	for (int i = 0; i < 100; i++) {
+	for (int i = 0; i < 10; i++) {
 		CreateThread(NULL, 0, procRECV, NULL, 0, 0);
 	}
 	while (true) {
