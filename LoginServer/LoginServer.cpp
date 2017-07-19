@@ -534,15 +534,15 @@ DWORD WINAPI workThread(LPVOID lpParam)
 					{
 						printf_s("¿Í»§¶Ë%sµÇÂ½³É¹¦£¡\n", userid);
 						sprintf_s(Senddata, c_MAX_DATA_LENGTH, "%s|%s", userid, "µÇÂ½³É¹¦£¡");
-						strcpy_s(pNewSendIoContext->m_szBuffer, strlen(Senddata)+1, Senddata);
-						pNewSendIoContext->m_wsaBuf.len = strlen(Senddata)+1;
+						strcpy_s(pNewSendIoContext->m_szBuffer, strlen(Senddata) + 1, Senddata);
+						pNewSendIoContext->m_wsaBuf.len = strlen(Senddata) + 1;
 					}
 					else
 					{
 						printf_s("¿Í»§¶Ë%sµÇÂ½Ê§°Ü£¡\n", userid);
 						sprintf_s(Senddata, c_MAX_DATA_LENGTH, "%s|%s", userid, "µÇÂ½Ê§°Ü£¡");
-						strcpy_s(pNewSendIoContext->m_szBuffer, strlen(Senddata)+1, Senddata);
-						pNewSendIoContext->m_wsaBuf.len = strlen(Senddata)+1;
+						strcpy_s(pNewSendIoContext->m_szBuffer, strlen(Senddata) + 1, Senddata);
+						pNewSendIoContext->m_wsaBuf.len = strlen(Senddata) + 1;
 					}
 					_PostSend(pNewSendIoContext);
 

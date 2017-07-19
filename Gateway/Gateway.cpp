@@ -183,7 +183,7 @@ public:
 			if (m_arrayPerSocketContext[i])
 			{
 				m_arrayPerSocketContext[i]->UpTimer();
-				if (m_arrayPerSocketContext[i]->m_timer > 1)
+				if (m_arrayPerSocketContext[i]->m_timer > 2)
 				{
 					num--;
 					m_arrayPerSocketContext[i]->CloseSocketContext();
@@ -208,6 +208,7 @@ public:
 				if (!memcmp(&m_arrayPerSocketContext[i]->m_ClientAddr, &client_addr, sizeof(SOCKADDR_IN)))
 				{
 					m_arrayPerSocketContext[i]->ResetTimer();
+					printf("%d", m_arrayPerSocketContext[i]->m_timer);
 					return true;
 				}
 				temp++;
@@ -504,13 +505,16 @@ DWORD WINAPI workThread(LPVOID lpParam)
 								{
 									break;
 								}
-								//判断是否是单对单信息
-								if (!strcmp(type, cSocketContext->m_username))
+								if (cSocketContext)
 								{
-									online = true;
-									break;
+									//判断是否是单对单信息
+									if (!strcmp(type, cSocketContext->m_username))
+									{
+										online = true;
+										break;
+									}
+									count--;
 								}
-								count--;
 							}
 
 							char* Senddata = new char[c_MAX_DATA_LENGTH];
@@ -529,7 +533,9 @@ DWORD WINAPI workThread(LPVOID lpParam)
 							}
 							else
 							{
-								// 给这个客户端SocketContext绑定一个Recv的计划
+								char IpPort[16];
+								inet_ntop(AF_INET, &newSocketContext->m_ClientAddr.sin_addr, IpPort, 16);
+								printf_s("客户端 %s(%s:%d) 登陆失败！\n", type, IpPort, ntohs(newSocketContext->m_ClientAddr.sin_port));
 								sprintf_s(Senddata, c_MAX_DATA_LENGTH, "登陆失败！");
 								_PER_IO_CONTEXT* pNewSendIoContext = newSocketContext->GetNewIoContext();
 								strcpy_s(pNewSendIoContext->m_szBuffer, strlen(Senddata) + 1, Senddata);
@@ -556,9 +562,10 @@ DWORD WINAPI workThread(LPVOID lpParam)
 				break;
 			case RECV:
 				{
-					char* data = new char[40];
-
-					ZeroMemory(data, 40);
+					char senddata[4096];
+					ZeroMemory(senddata, 4096);
+					char* data = new char[c_MAX_DATA_LENGTH];
+					ZeroMemory(data, c_MAX_DATA_LENGTH);
 					char* type = strtok_s(pIoContext->m_wsaBuf.buf, "|", &data);
 
 					switch (type[0])
@@ -569,6 +576,103 @@ DWORD WINAPI workThread(LPVOID lpParam)
 							printf_s("连接%s服务器(%s:%d)%s\n", pListenContext->m_username, IPAddr, ntohs(pListenContext->m_ClientAddr.sin_port), data);
 						}
 						break;
+					case 'C':
+						{
+							inet_ntop(AF_INET, &pListenContext->m_ClientAddr.sin_addr, IPAddr, 16);
+							printf_s("客户端 %s(%s:%d) 向大家发送:%s\n", pListenContext->m_username, IPAddr, ntohs(pListenContext->m_ClientAddr.sin_port), data);
+							sprintf_s(senddata, c_MAX_DATA_LENGTH, "%s(%s:%d)向大家发送:\n%s", pListenContext->m_username, IPAddr, ntohs(pListenContext->m_ClientAddr.sin_port), data);
+
+							int count = m_arrayServerSocketContext.num;
+							bool online = false;
+							_PER_SOCKET_CONTEXT* cSocketContext = nullptr;
+							for (int i = 0; i < c_SOCKET_CONTEXT; i++)
+							{
+								cSocketContext = m_arrayServerSocketContext.getARR(i);
+								if (count == 0)
+								{
+									break;
+								}
+								if (cSocketContext)
+								{
+									//判断是否是单对单信息
+									if (!strcmp(type, cSocketContext->m_username))
+									{
+										online = true;
+										break;
+									}
+									count--;
+								}
+							}
+
+							_PER_IO_CONTEXT* pNewIoContext = pListenContext->GetNewIoContext();
+							pNewIoContext->m_socket = pListenContext->m_Socket;
+							if (online)
+							{
+								_PER_IO_CONTEXT* pNewSendIoContext = cSocketContext->GetNewIoContext();
+								pNewSendIoContext->m_socket = cSocketContext->m_Socket;
+								// 给这个客户端SocketContext绑定一个Recv的计划
+								strcpy_s(pNewSendIoContext->m_szBuffer, strlen(senddata) + 1, senddata);
+								pNewSendIoContext->m_wsaBuf.len = strlen(senddata) + 1;
+								// Send投递出去
+								_PostSend(pNewSendIoContext);
+
+								strcpy_s(pNewIoContext->m_szBuffer, 12, "已发送成功");
+							}
+							else
+							{
+								strcpy_s(pNewIoContext->m_szBuffer, 12, "未发送成功");
+							}
+							pNewIoContext->m_wsaBuf.len = 12;
+							_PostSend(pNewIoContext);
+						}
+						break;
+					case 'A':
+					{
+						
+						int count = m_arrayServerSocketContext.num;
+						bool online = false;
+						_PER_SOCKET_CONTEXT* cSocketContext = nullptr;
+						for (int i = 0; i < c_SOCKET_CONTEXT; i++)
+						{
+							cSocketContext = m_arrayServerSocketContext.getARR(i);
+							if (count == 0)
+							{
+								break;
+							}
+							if (cSocketContext)
+							{
+								//判断是否是单对单信息
+								if (!strcmp(type, cSocketContext->m_username))
+								{
+									online = true;
+									break;
+								}
+								count--;
+							}
+						}
+
+						_PER_IO_CONTEXT* pNewIoContext = pListenContext->GetNewIoContext();
+						pNewIoContext->m_socket = pListenContext->m_Socket;
+						if (online)
+						{
+							_PER_IO_CONTEXT* pNewSendIoContext = cSocketContext->GetNewIoContext();
+							pNewSendIoContext->m_socket = cSocketContext->m_Socket;
+							// 给这个客户端SocketContext绑定一个Recv的计划
+							strcpy_s(pNewSendIoContext->m_szBuffer, strlen(senddata) + 1, senddata);
+							pNewSendIoContext->m_wsaBuf.len = strlen(senddata) + 1;
+							// Send投递出去
+							_PostSend(pNewSendIoContext);
+
+							strcpy_s(pNewIoContext->m_szBuffer, 12, "已发送成功");
+						}
+						else
+						{
+							strcpy_s(pNewIoContext->m_szBuffer, 12, "未发送成功");
+						}
+						pNewIoContext->m_wsaBuf.len = 12;
+						_PostSend(pNewIoContext);
+					}
+					break;
 					default:
 
 						bool ok = false;
@@ -581,7 +685,7 @@ DWORD WINAPI workThread(LPVOID lpParam)
 						int count = m_arraySocketContext.num;
 						for (int i = 0; i < c_SOCKET_CONTEXT; i++)
 						{
-							_PER_SOCKET_CONTEXT * cSocketContext = m_arraySocketContext.getARR(i);
+							_PER_SOCKET_CONTEXT* cSocketContext = m_arraySocketContext.getARR(i);
 							if (count == 0)
 							{
 								break;
@@ -608,7 +712,8 @@ DWORD WINAPI workThread(LPVOID lpParam)
 									{
 										pNewRecvIoContext->CloseIoContext();
 									}
-								}else
+								}
+								else
 								{
 									printf_s("客户端 %s(%s:%d) 登陆失败！\n", type, IpPort, ntohs(cSocketContext->m_ClientAddr.sin_port));
 									strcpy_s(pNewSendIoContext->m_szBuffer, strlen(data) + 1, data);
@@ -618,9 +723,9 @@ DWORD WINAPI workThread(LPVOID lpParam)
 							}
 							count--;
 						}
-
 						break;
 					}
+
 
 					pIoContext->ResetBuffer();
 					_PostRecv(pIoContext);
@@ -728,7 +833,7 @@ DWORD WINAPI StartTimerCount(LPVOID lpParam)
 		{
 			m_arrayServerSocketContext.UpTimer();
 		}
-		Sleep(5000);
+		Sleep(10000);
 	}
 }
 
@@ -743,7 +848,6 @@ bool _PostEnd(_PER_IO_CONTEXT* pSendIoContext)
 	if ((WSASend(pSendIoContext->m_socket, &pSendIoContext->m_wsaBuf, 1, &dwBytes, dwFlags, &pSendIoContext->m_overlapped,
 	             NULL) == SOCKET_ERROR) && (WSAGetLastError() != WSA_IO_PENDING))
 	{
-		//.RemoveContext(SendIoContext);
 		return false;
 	}
 	pSendIoContext->ResetBuffer();

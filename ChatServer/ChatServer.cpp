@@ -5,7 +5,7 @@
 #include "mswsock.h"
 #pragma comment(lib,"ws2_32.lib")
 
-#define c_LISTEN_PORT 8600
+#define c_LISTEN_PORT 8603
 #define c_MAX_DATA_LENGTH 4096
 #define c_SOCKET_CONTEXT 2048
 #define c_MAX_POST_ACCEPT 10
@@ -76,9 +76,11 @@ struct _PER_SOCKET_CONTEXT
 	SOCKADDR_IN m_ClientAddr; // 客户端的地址
 	char m_username[40];
 	_PER_IO_CONTEXT* HeadIoContext;
+	int m_timer;
 
 	_PER_SOCKET_CONTEXT()
 	{
+		m_timer = 0;
 		m_Socket = INVALID_SOCKET;
 		memset(&m_ClientAddr, 0, sizeof(m_ClientAddr));
 		ZeroMemory(m_username, 40);
@@ -108,12 +110,18 @@ struct _PER_SOCKET_CONTEXT
 			{
 				HeadIoContext->pNextIoContext->CloseIoContext();
 			}
+			m_timer = 0;
 			HeadIoContext = NULL;
 			closesocket(m_Socket);
 			m_Socket = NULL;
 			memset(&m_ClientAddr, 0, sizeof(m_ClientAddr));
 			ZeroMemory(m_username, 40);
 		}
+	}
+
+	void UpTimer()
+	{
+		m_timer++;
 	}
 };
 
@@ -161,12 +169,29 @@ public:
 			}
 		}
 	}
+
+	void UpTimer()
+	{
+		int temp = 0;
+		for (int i = 0; i < c_SOCKET_CONTEXT; i++)
+		{
+			if (m_arrayPerSocketContext[i])
+			{
+				m_arrayPerSocketContext[i]->UpTimer();
+				temp++;
+				if (temp == num)
+				{
+					break;
+				}
+			}
+		}
+	};
 };
 
 //用户名数组
-char* g_saUsername[3] = {"admin","root" ,"zz"};
+char* g_saUsername[3] = { "admin","root" ,"zz" };
 //密码数组
-char* g_saPassword[3] = {"adminadmin","rootroot" ,"zzzz"};
+char* g_saPassword[3] = { "adminadmin","rootroot" ,"zzzz" };
 
 
 //完成接口
@@ -189,6 +214,8 @@ _PER_SOCKET_CONTEXT* g_ListenContext;
 
 //声明用来完成端口操作的线程
 DWORD WINAPI workThread(LPVOID lpParam);
+//声明用来计数的线程
+DWORD WINAPI StartHeartBeat(LPVOID lpParam);
 //声明投递Send请求，发送完消息后会通知完成端口
 bool _PostSend(_PER_IO_CONTEXT* pSendIoContext);
 //声明投递Recv请求，接收完请求会通知完成端口
@@ -312,7 +339,6 @@ int main()
 	}
 	printf_s("Listen Socket绑定完成端口 完成.\n");
 
-
 	//循环10次
 	for (int i = 0; i < c_MAX_POST_ACCEPT; i++)
 	{
@@ -327,7 +353,9 @@ int main()
 	}
 	printf_s("投递 %d 个AcceptEx请求完毕 \n", c_MAX_POST_ACCEPT);
 
-	printf_s("INFO:服务器端已启动......\n");
+	CreateThread(0, 0, StartHeartBeat, NULL, 0, NULL);
+
+	printf_s("登陆服务器端已启动......\n");
 
 	//主线程阻塞，输入exit退出
 	bool run = true;
@@ -367,9 +395,10 @@ DWORD WINAPI workThread(LPVOID lpParam)
 			&pOverlapped,//这个是我们在连入Socket的时候一起建立的那个重叠结构  
 			INFINITE);//等待完成端口的超时时间，如果线程不需要做其他的事情，那就INFINITE
 
-		//通过这个Overlapped，得到包含这个的网错操作结构体
+					  //通过这个Overlapped，得到包含这个的网错操作结构体
 		_PER_IO_CONTEXT* pIoContext = CONTAINING_RECORD(pOverlapped, _PER_IO_CONTEXT, m_overlapped);
 
+		char IPAddr[16];
 		// 判断是否有客户端断开了
 		if (!bReturn)
 		{
@@ -377,7 +406,6 @@ DWORD WINAPI workThread(LPVOID lpParam)
 			//错误代码64，客户端closesocket
 			if (dwErr == 64)
 			{
-				char IPAddr[20];
 				inet_ntop(AF_INET, &pListenContext->m_ClientAddr.sin_addr, IPAddr, 16);
 				printf_s("客户端 %s:%d 断开连接！\n", IPAddr, ntohs(pListenContext->m_ClientAddr.sin_port));
 				m_arraySocketContext.RemoveContext(pListenContext);
@@ -393,178 +421,84 @@ DWORD WINAPI workThread(LPVOID lpParam)
 			switch (pIoContext->m_IoType)
 			{
 			case ACCEPT:
+			{
+				char IpPort[20];
+				// 1. 首先取得连入客户端的地址信息(查看业务员接待的客户信息)
+				SOCKADDR_IN* pClientAddr = NULL;
+				SOCKADDR_IN* pLocalAddr = NULL;
+				int remoteLen = sizeof(SOCKADDR_IN), localLen = sizeof(SOCKADDR_IN);
+				m_AcceptExSockAddrs(pIoContext->m_wsaBuf.buf, pIoContext->m_wsaBuf.len - ((sizeof(SOCKADDR_IN) + 16) * 2),
+					sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, (LPSOCKADDR*)&pLocalAddr, &localLen, (LPSOCKADDR*)&pClientAddr, &remoteLen);
+
+				inet_ntop(AF_INET, &pClientAddr->sin_addr, IPAddr, 16);
+				printf_s("%s:%d 连接.\n", IPAddr, ntohs(pClientAddr->sin_port));
+
+				char* data = new char[40];
+
+				char* type = strtok_s(pIoContext->m_wsaBuf.buf, "|", &data);
+
+
+				_PER_SOCKET_CONTEXT* newSocketContext = m_arraySocketContext.GetNewSocketContext(pClientAddr, type);
+				//将Socket结构体保存到Socket结构体数组中新获得的Socket结构体中
+				newSocketContext->m_Socket = pIoContext->m_socket;
+				//将客户端的地址保存到Socket结构体数组中新获得的Socket结构体中
+				memcpy(&(newSocketContext->m_ClientAddr), pClientAddr, sizeof(SOCKADDR_IN));
+				//将这个新得到的Socket结构体放到完成端口中，有结果告诉我
+				HANDLE hTemp = CreateIoCompletionPort((HANDLE)newSocketContext->m_Socket, g_hIoCompletionPort, (DWORD)newSocketContext, 0);
+				if (NULL == hTemp)
 				{
-					// 1. 首先取得连入客户端的地址信息(查看业务员接待的客户信息)
-					SOCKADDR_IN* pClientAddr = NULL;
-					SOCKADDR_IN* pLocalAddr = NULL;
-					int remoteLen = sizeof(SOCKADDR_IN), localLen = sizeof(SOCKADDR_IN);
-					m_AcceptExSockAddrs(pIoContext->m_wsaBuf.buf, pIoContext->m_wsaBuf.len - ((sizeof(SOCKADDR_IN) + 16) * 2),
-					                    sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, (LPSOCKADDR*)&pLocalAddr, &localLen, (LPSOCKADDR*)&pClientAddr, &remoteLen);
+					printf_s("执行CreateIoCompletionPort出现错误.错误代码: %d \n", GetLastError());
+					break;
+				}
 
-					char IPAddr[16];
-					inet_ntop(AF_INET, &pClientAddr->sin_addr, IPAddr, 16);
-					printf_s("客户端 %s:%d 连接.\n", IPAddr, ntohs(pClientAddr->sin_port));
+				//给这个新得到的Socket结构体绑定一个PostSend操作，将客户端是否登陆成功的结果发送回去，发送操作完成，通知完成端口
+				_PER_IO_CONTEXT* pNewSendIoContext = newSocketContext->GetNewIoContext();
+				pNewSendIoContext->m_socket = newSocketContext->m_Socket;
 
-					//接收的密码
-					char* input_password = new char[40];
+				switch (type[0])
+				{
+				case 'G':
+				{
+					inet_ntop(AF_INET, &pClientAddr->sin_addr, IpPort, 16);
+					printf_s("%s服务器(%s:%d)连接成功！\n", type, IpPort, ntohs(pClientAddr->sin_port));
+					strcpy_s(pNewSendIoContext->m_szBuffer, 10, "G|成功！");
+					pNewSendIoContext->m_wsaBuf.len = 10;
 
-					//接收字符串为 用户名#密码 的结构，需要strtok_s分割开
-					char* input_username = strtok_s(pIoContext->m_wsaBuf.buf, "#", &input_password);
+					_PostSend(pNewSendIoContext);
+					//给这个新得到的Socket结构体绑定一个PostRevc操作，将客户端是否登陆成功的结果发送回去，发送操作完成，通知完成端口
+					_PER_IO_CONTEXT* pNewRecvIoContext = newSocketContext->GetNewIoContext();
+					pNewRecvIoContext->m_socket = newSocketContext->m_Socket;
 
-					//保存连接客户端的用户名
-					char* user = new char[40];
-					strcpy_s(user, strlen(input_username) + 1, input_username);
-
-					//是否登陆成功
-					bool ok = false;
-
-					if (strlen(input_username) > 0 && strlen(input_password) > 0)
+					if (!_PostRecv(pNewRecvIoContext))
 					{
-						//查找账号是否存在
-						for (int i = 0; i < sizeof(g_saUsername) / sizeof(g_saUsername[0]); i++)
-						{
-							int j;
-							for (j = 0; g_saUsername[i][j] == input_username[j] && input_username[j]; j++);
-							if (g_saUsername[i][j] == input_username[j] && input_username[j] == 0)
-							{
-								//账号存在查找密码是否正确
-								int k;
-								for (k = 0; g_saPassword[i][k] == input_password[k] && input_password[k]; k++);
-								if (g_saPassword[i][k] == input_password[k] && input_password[k] == 0)
-								{
-									ok = true;
-								}
-								break;
-							}
-						}
+						pNewRecvIoContext->CloseIoContext();
 					}
-
-					//无论是否登陆成功，都要反馈一个结果给客户端 登陆成功 or 登陆失败
-					//通过Socket结构体数组得到一个新的Socket结构体，并将用户信息保存进去
-					_PER_SOCKET_CONTEXT* newSocketContext = m_arraySocketContext.GetNewSocketContext(pClientAddr, user);
-					//将Socket结构体保存到Socket结构体数组中新获得的Socket结构体中
-					newSocketContext->m_Socket = pIoContext->m_socket;
-					//将这个新得到的Socket结构体放到完成端口中，有结果告诉我
-					HANDLE hTemp = CreateIoCompletionPort((HANDLE)newSocketContext->m_Socket, g_hIoCompletionPort, (DWORD)newSocketContext, 0);
-					if (NULL == hTemp)
-					{
-						printf_s("执行CreateIoCompletionPort出现错误.错误代码: %d \n", GetLastError());
-						break;
-					}
-
-					//给这个新得到的Socket结构体绑定一个PostSend操作，将客户端是否登陆成功的结果发送回去，发送操作完成，通知完成端口
-					_PER_IO_CONTEXT* pNewSendIoContext = newSocketContext->GetNewIoContext();
-					pNewSendIoContext->m_socket = newSocketContext->m_Socket;
-
-					char IpPort[16];
-					if (ok)
-					{
-						inet_ntop(AF_INET, &pClientAddr->sin_addr, IpPort, 16);
-						printf_s("客户端 %s(%s:%d) 登陆成功！\n", user, IpPort, ntohs(pClientAddr->sin_port));
-						strcpy_s(pNewSendIoContext->m_szBuffer, 11, "登陆成功！");
-						pNewSendIoContext->m_wsaBuf.len = 11;
-					}
-					else
-					{
-						inet_ntop(AF_INET, &pClientAddr->sin_addr, IPAddr, 16);
-						printf_s("客户端 %s(%s:%d) 登陆失败！\n", user, IPAddr, ntohs(pClientAddr->sin_port));
-						strcpy_s(pNewSendIoContext->m_szBuffer, 11, "登陆失败！");
-						pNewSendIoContext->m_wsaBuf.len = 11;
-					}
-
-					//查看是否登陆成功
-					if (ok)
-					{
-						_PostSend(pNewSendIoContext);
-						//给这个新得到的Socket结构体绑定一个PostRevc操作，将客户端是否登陆成功的结果发送回去，发送操作完成，通知完成端口
-						_PER_IO_CONTEXT* pNewRecvIoContext = newSocketContext->GetNewIoContext();
-						pNewRecvIoContext->m_socket = newSocketContext->m_Socket;
-
-						if (!_PostRecv(pNewRecvIoContext))
-						{
-							pNewRecvIoContext->CloseIoContext();
-						}
-					}
-					else
-					{
-						_PostEnd(pNewSendIoContext);
-					}
-					//将之前的Accept的网络操作结构体重置buffer，让该网络操作继续Accept
-					pIoContext->ResetBuffer();
-					_PostAccept(pIoContext);
 				}
 				break;
+				default:
+				{
+					inet_ntop(AF_INET, &pClientAddr->sin_addr, IpPort, 16);
+					printf_s("未知服务器(%s:%d)连接成功连接失败！\n", IpPort, ntohs(pClientAddr->sin_port));
+					strcpy_s(pNewSendIoContext->m_szBuffer, 10, "G|失败！");
+					pNewSendIoContext->m_wsaBuf.len = 10;
+					_PostEnd(pNewSendIoContext);
+				}
+				break;
+				}
+
+				//将之前的Accept的网络操作结构体重置buffer，让该网络操作继续Accept
+				pIoContext->ResetBuffer();
+				_PostAccept(pIoContext);
+			}
+			break;
 			case RECV:
-				{
-					char IPAddr[16];
-					//执行recv后，进行接收数据的处理，发给别的客户端，并再recv
-					if (dwBytesTransfered > 1)
-					{
-						char* Senddata = new char[c_MAX_DATA_LENGTH];
-						ZeroMemory(Senddata, c_MAX_DATA_LENGTH);
+			{
+				printf_s("%s\n", pIoContext->m_wsaBuf.buf);
 
-						char* temp = new char[c_MAX_DATA_LENGTH];
-						ZeroMemory(temp, c_MAX_DATA_LENGTH);
-
-						char* sendname = new char[40];
-						ZeroMemory(sendname, 40);
-						if (pIoContext->m_wsaBuf.buf[0] == '\\')
-						{
-							sendname = strtok_s(pIoContext->m_wsaBuf.buf, "\\", &temp);
-							strtok_s(sendname, " ", &temp);
-							if (temp != NULL)
-							{
-								inet_ntop(AF_INET, &pListenContext->m_ClientAddr.sin_addr, IPAddr, 16);
-								printf_s("客户端 %s(%s:%d) 向 %s 发送:%s\n", pListenContext->m_username, IPAddr, ntohs(pListenContext->m_ClientAddr.sin_port), sendname, temp);
-								sprintf_s(Senddata, c_MAX_DATA_LENGTH, "%s(%s:%d)向你发送:\n%s", pListenContext->m_username, IPAddr, ntohs(pListenContext->m_ClientAddr.sin_port), temp);
-							}
-						}
-						else
-						{
-							inet_ntop(AF_INET, &pListenContext->m_ClientAddr.sin_addr, IPAddr, 16);
-							printf_s("客户端 %s(%s:%d) 向大家发送:%s\n", pListenContext->m_username, IPAddr, ntohs(pListenContext->m_ClientAddr.sin_port), pIoContext->m_szBuffer);
-							sprintf_s(Senddata, c_MAX_DATA_LENGTH, "%s(%s:%d)向大家发送:\n%s", pListenContext->m_username, IPAddr, ntohs(pListenContext->m_ClientAddr.sin_port), pIoContext->m_szBuffer);
-						}
-						int count = m_arraySocketContext.num;
-						for (int i = 0; i < c_SOCKET_CONTEXT; i++)
-						{
-							_PER_SOCKET_CONTEXT* cSocketContext = m_arraySocketContext.getARR(i);
-							if (count == 0)
-							{
-								break;
-							}
-							if (cSocketContext->m_Socket == pListenContext->m_Socket || cSocketContext == NULL)
-							{
-								continue;
-							}
-							//判断是否是单对单信息
-							if (strlen(sendname) > 0 && !strcmp(sendname, cSocketContext->m_username) && strlen(Senddata) > 0)
-							{
-								// 给这个客户端SocketContext绑定一个Recv的计划
-								_PER_IO_CONTEXT* pNewSendIoContext = cSocketContext->GetNewIoContext();
-								strcpy_s(pNewSendIoContext->m_szBuffer, strlen(Senddata)+1, Senddata);
-								pNewSendIoContext->m_wsaBuf.len = strlen(Senddata)+1;
-								pNewSendIoContext->m_socket = cSocketContext->m_Socket;
-								// Send投递出去
-								_PostSend(pNewSendIoContext);
-							}//判断是否不是单对单消息，且消息有长度
-							else if (strlen(sendname) == 0 && strlen(Senddata) > 0)
-							{
-								// 给这个客户端SocketContext绑定一个Recv的计划
-								_PER_IO_CONTEXT* pNewSendIoContext = cSocketContext->GetNewIoContext();
-								strcpy_s(pNewSendIoContext->m_szBuffer, strlen(Senddata)+1, Senddata);
-								pNewSendIoContext->m_wsaBuf.len = strlen(Senddata)+1;
-								pNewSendIoContext->m_socket = cSocketContext->m_Socket;
-								// Send投递出去
-								_PostSend(pNewSendIoContext);
-							}
-							count--;
-						}
-					}
-					pIoContext->ResetBuffer();
-					_PostRecv(pIoContext);
-				}
-				break;
+				pIoContext->ResetBuffer();
+				_PostRecv(pIoContext);
+			}
+			break;
 			case SEND:
 				//发送完消息后，将包含网络操作的结构体删除
 				pIoContext->CloseIoContext();
@@ -585,6 +519,33 @@ DWORD WINAPI workThread(LPVOID lpParam)
 	return 0;
 }
 
+DWORD WINAPI StartHeartBeat(LPVOID lpParam)
+{
+	sockaddr_in ServerAddress;
+	WSADATA wsdata;
+
+	WSAStartup(MAKEWORD(2, 2), &wsdata);
+	SOCKET sock = WSASocket(AF_INET, SOCK_DGRAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
+	//然后赋值给地址，用来从网络上的广播地址接收消息；  
+	ServerAddress.sin_family = AF_INET;
+	ServerAddress.sin_addr.s_addr = INADDR_BROADCAST;
+	ServerAddress.sin_port = htons(9000);
+	bool opt = true;
+	//设置该套接字为广播类型，  
+	setsockopt(sock, SOL_SOCKET, SO_BROADCAST, (char FAR *)&opt, sizeof(opt));
+	char smsg[256];
+	sprintf_s(smsg, 256, "CHAT#%d", c_LISTEN_PORT);
+	while (true)
+	{
+		int ret = sendto(sock, smsg, 256, 0, (sockaddr*)&ServerAddress, sizeof(ServerAddress));
+		if (ret == SOCKET_ERROR)
+		{
+			printf("%d \n", WSAGetLastError());
+		}
+		Sleep(2000);
+	}
+}
+
 //定义投递Send请求，发送完消息后会通知完成端口
 bool _PostEnd(_PER_IO_CONTEXT* pSendIoContext)
 {
@@ -594,8 +555,9 @@ bool _PostEnd(_PER_IO_CONTEXT* pSendIoContext)
 	pSendIoContext->m_IoType = NONE;
 
 	if ((WSASend(pSendIoContext->m_socket, &pSendIoContext->m_wsaBuf, 1, &dwBytes, dwFlags, &pSendIoContext->m_overlapped,
-	             NULL) == SOCKET_ERROR) && (WSAGetLastError() != WSA_IO_PENDING))
+		NULL) == SOCKET_ERROR) && (WSAGetLastError() != WSA_IO_PENDING))
 	{
+		//.RemoveContext(SendIoContext);
 		return false;
 	}
 	pSendIoContext->ResetBuffer();
@@ -611,7 +573,7 @@ bool _PostSend(_PER_IO_CONTEXT* pSendIoContext)
 	pSendIoContext->m_IoType = SEND;
 
 	if ((WSASend(pSendIoContext->m_socket, &pSendIoContext->m_wsaBuf, 1, &dwBytes, dwFlags, &pSendIoContext->m_overlapped,
-	             NULL) == SOCKET_ERROR) && (WSAGetLastError() != WSA_IO_PENDING))
+		NULL) == SOCKET_ERROR) && (WSAGetLastError() != WSA_IO_PENDING))
 	{
 		//.RemoveContext(SendIoContext);
 		return false;
@@ -665,7 +627,7 @@ bool _PostAccept(_PER_IO_CONTEXT* pAcceptIoContext)
 
 	// 投递AcceptEx
 	if (m_AcceptEx(g_ListenContext->m_Socket, pAcceptIoContext->m_socket, p_wbuf->buf, p_wbuf->len - ((sizeof(SOCKADDR_IN) + 16) * 2),
-	               sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, &dwBytes, p_ol) == FALSE)
+		sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, &dwBytes, p_ol) == FALSE)
 	{
 		if (WSAGetLastError() != WSA_IO_PENDING)
 		{
