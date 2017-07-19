@@ -10,23 +10,27 @@ DWORD WINAPI workThread(LPVOID lpParam)
 	while (true)
 	{
 		char recData[4096];
-		int ret = recv(client, recData, 4096, 0);
-		if (ret > 0 && recData[0] != '\0') {
+		if(recv(client, recData, 4096, 0)== SOCKET_ERROR)
+		{
+			break;
+		}
+		if (recData[0] != '\0') {
 			printf("%s \n", recData);
 		}
 	}
+	return 0;
 }
 
 int main()
 {
-	WSADATA wsdata;
-	if (WSAStartup(MAKEWORD(2, 2), &wsdata) != 0)
-	{
-		return 1;
-	}
-	SOCKET sclient;
 	while (true)
 	{
+		WSADATA wsdata;
+		if (WSAStartup(MAKEWORD(2, 2), &wsdata) != 0)
+		{
+			return 1;
+		}
+
 		char senddata[4096];
 		char username[80];
 		char password[40];
@@ -37,9 +41,9 @@ int main()
 		printf("请输入密码：");
 		gets_s(password);
 
-		sprintf_s(senddata, sizeof(senddata), "%s#%s", username, password);
+		sprintf_s(senddata, sizeof(senddata), "LOGIN|%s#%s", username, password);
 
-		sclient = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+		SOCKET sclient = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 		if (sclient == INVALID_SOCKET)
 		{
 			printf("invalid socket !");
@@ -48,7 +52,7 @@ int main()
 
 		sockaddr_in serAddr;
 		serAddr.sin_family = AF_INET;
-		serAddr.sin_port = htons(9999);
+		serAddr.sin_port = htons(8600);
 		serAddr.sin_addr.S_un.S_addr = inet_addr("127.0.0.1");
 		if (connect(sclient, (sockaddr *)&serAddr, sizeof(serAddr)) == SOCKET_ERROR)
 		{
@@ -84,7 +88,7 @@ int main()
 			send(sclient, senddata, strlen(senddata), 0);
 		}
 		closesocket(sclient);
+		WSACleanup();
 	}
-	WSACleanup();
 	return 0;
 }

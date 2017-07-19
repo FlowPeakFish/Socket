@@ -5,9 +5,9 @@
 #include "mswsock.h"
 #pragma comment(lib,"ws2_32.lib")
 
+#define c_LISTEN_PORT 8600
 #define c_MAX_DATA_LENGTH 4096
-#define c_SOCKET_SUM 2048
-//同时投递的AcceptEx请求的数量
+#define c_SOCKET_CONTEXT 2048
 #define c_MAX_POST_ACCEPT 10
 
 enum enumIoType
@@ -121,11 +121,13 @@ struct _PER_SOCKET_CONTEXT
 class ARRAY_PER_SOCKET_CONTEXT
 {
 private:
-	_PER_SOCKET_CONTEXT* m_arrayPerSocketContext[c_SOCKET_SUM];
+	_PER_SOCKET_CONTEXT* m_arrayPerSocketContext[c_SOCKET_CONTEXT];
 public:
+	int num = 0;
+
 	_PER_SOCKET_CONTEXT* GetNewSocketContext(SOCKADDR_IN* pAddressPort, char* szUserName)
 	{
-		for (int i = 0; i < c_SOCKET_SUM; i++)
+		for (int i = 0; i < c_SOCKET_CONTEXT; i++)
 		{
 			//如果某一个IO_CONTEXT_ARRAY[i]为0，表示哪一个位可以放入PER_IO_CONTEXT  
 			if (!m_arrayPerSocketContext[i])
@@ -133,6 +135,7 @@ public:
 				m_arrayPerSocketContext[i] = new _PER_SOCKET_CONTEXT();
 				memcpy(&(m_arrayPerSocketContext[i]->m_ClientAddr), pAddressPort, sizeof(SOCKADDR_IN));
 				strcpy_s(m_arrayPerSocketContext[i]->m_username, strlen(szUserName) + 1, szUserName);
+				num++;
 				return m_arrayPerSocketContext[i];
 			}
 		}
@@ -147,10 +150,11 @@ public:
 	// 从数组中移除一个指定的IoContext
 	void RemoveContext(_PER_SOCKET_CONTEXT* pRemoveSokcetContext)
 	{
-		for (int i = 0; i < c_SOCKET_SUM; i++)
+		for (int i = 0; i < c_SOCKET_CONTEXT; i++)
 		{
 			if (m_arrayPerSocketContext[i] == pRemoveSokcetContext)
 			{
+				num--;
 				m_arrayPerSocketContext[i]->CloseSocketContext();
 				m_arrayPerSocketContext[i] = NULL;
 				break;
@@ -246,10 +250,10 @@ int main()
 	ZeroMemory(&ServerAddress, sizeof(ServerAddress));
 	ServerAddress.sin_family = AF_INET;
 	ServerAddress.sin_addr.s_addr = htonl(INADDR_ANY);
-	ServerAddress.sin_port = htons(9999);
+	ServerAddress.sin_port = htons(c_LISTEN_PORT);
 
 	// 绑定地址和端口
-	if (bind(g_ListenContext->m_Socket, (struct sockaddr *)&ServerAddress, sizeof(ServerAddress)) == SOCKET_ERROR)
+	if (bind(g_ListenContext->m_Socket, (LPSOCKADDR)&ServerAddress, sizeof(ServerAddress)) == SOCKET_ERROR)
 	{
 		printf_s("bind()函数执行错误.\n");
 		return 4;
@@ -440,8 +444,6 @@ DWORD WINAPI workThread(LPVOID lpParam)
 					_PER_SOCKET_CONTEXT* newSocketContext = m_arraySocketContext.GetNewSocketContext(pClientAddr, user);
 					//将Socket结构体保存到Socket结构体数组中新获得的Socket结构体中
 					newSocketContext->m_Socket = pIoContext->m_socket;
-					//将客户端的地址保存到Socket结构体数组中新获得的Socket结构体中
-					memcpy(&(newSocketContext->m_ClientAddr), pClientAddr, sizeof(SOCKADDR_IN));
 					//将这个新得到的Socket结构体放到完成端口中，有结果告诉我
 					HANDLE hTemp = CreateIoCompletionPort((HANDLE)newSocketContext->m_Socket, g_hIoCompletionPort, (DWORD)newSocketContext, 0);
 					if (NULL == hTemp)
@@ -454,7 +456,7 @@ DWORD WINAPI workThread(LPVOID lpParam)
 					_PER_IO_CONTEXT* pNewSendIoContext = newSocketContext->GetNewIoContext();
 					pNewSendIoContext->m_socket = newSocketContext->m_Socket;
 
-					char IpPort[20];
+					char IpPort[16];
 					if (ok)
 					{
 						inet_ntop(AF_INET, &pClientAddr->sin_addr, IpPort, 16);
@@ -494,6 +496,7 @@ DWORD WINAPI workThread(LPVOID lpParam)
 				break;
 			case RECV:
 				{
+					char IPAddr[16];
 					//执行recv后，进行接收数据的处理，发给别的客户端，并再recv
 					if (dwBytesTransfered > 1)
 					{
@@ -511,7 +514,6 @@ DWORD WINAPI workThread(LPVOID lpParam)
 							strtok_s(sendname, " ", &temp);
 							if (temp != NULL)
 							{
-								char IPAddr[20];
 								inet_ntop(AF_INET, &pListenContext->m_ClientAddr.sin_addr, IPAddr, 16);
 								printf_s("客户端 %s(%s:%d) 向 %s 发送:%s\n", pListenContext->m_username, IPAddr, ntohs(pListenContext->m_ClientAddr.sin_port), sendname, temp);
 								sprintf_s(Senddata, c_MAX_DATA_LENGTH, "%s(%s:%d)向你发送:\n%s", pListenContext->m_username, IPAddr, ntohs(pListenContext->m_ClientAddr.sin_port), temp);
@@ -519,15 +521,15 @@ DWORD WINAPI workThread(LPVOID lpParam)
 						}
 						else
 						{
-							char IPAddr[20];
 							inet_ntop(AF_INET, &pListenContext->m_ClientAddr.sin_addr, IPAddr, 16);
 							printf_s("客户端 %s(%s:%d) 向大家发送:%s\n", pListenContext->m_username, IPAddr, ntohs(pListenContext->m_ClientAddr.sin_port), pIoContext->m_szBuffer);
 							sprintf_s(Senddata, c_MAX_DATA_LENGTH, "%s(%s:%d)向大家发送:\n%s", pListenContext->m_username, IPAddr, ntohs(pListenContext->m_ClientAddr.sin_port), pIoContext->m_szBuffer);
 						}
-						for (int i = 0; i < c_SOCKET_SUM; i++)
+						int count = m_arraySocketContext.num;
+						for (int i = 0; i < c_SOCKET_CONTEXT; i++)
 						{
 							_PER_SOCKET_CONTEXT* cSocketContext = m_arraySocketContext.getARR(i);
-							if (cSocketContext == NULL)
+							if (count == 0)
 							{
 								break;
 							}
@@ -540,7 +542,8 @@ DWORD WINAPI workThread(LPVOID lpParam)
 							{
 								// 给这个客户端SocketContext绑定一个Recv的计划
 								_PER_IO_CONTEXT* pNewSendIoContext = cSocketContext->GetNewIoContext();
-								memcpy(&(pNewSendIoContext->m_wsaBuf.buf), &Senddata, sizeof(Senddata));
+								strcpy_s(pNewSendIoContext->m_szBuffer, strlen(Senddata)+1, Senddata);
+								pNewSendIoContext->m_wsaBuf.len = strlen(Senddata)+1;
 								pNewSendIoContext->m_socket = cSocketContext->m_Socket;
 								// Send投递出去
 								_PostSend(pNewSendIoContext);
@@ -549,11 +552,13 @@ DWORD WINAPI workThread(LPVOID lpParam)
 							{
 								// 给这个客户端SocketContext绑定一个Recv的计划
 								_PER_IO_CONTEXT* pNewSendIoContext = cSocketContext->GetNewIoContext();
-								memcpy((pNewSendIoContext->m_szBuffer), Senddata, strlen(Senddata) + 1);
+								strcpy_s(pNewSendIoContext->m_szBuffer, strlen(Senddata)+1, Senddata);
+								pNewSendIoContext->m_wsaBuf.len = strlen(Senddata)+1;
 								pNewSendIoContext->m_socket = cSocketContext->m_Socket;
 								// Send投递出去
 								_PostSend(pNewSendIoContext);
 							}
+							count--;
 						}
 					}
 					pIoContext->ResetBuffer();

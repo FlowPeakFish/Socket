@@ -31,15 +31,14 @@ int main()
 
 DWORD WINAPI workThread(LPVOID lpParam)
 {
-	SOCKET sock;
 	sockaddr_in ServerAddress;
 	WSADATA wsdata;
-	bool bsocket;
-	
-	WSAStartup(0x0202, &wsdata);
 
-	sock = WSASocket(AF_INET, SOCK_DGRAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
-	bsocket = true;
+	if (WSAStartup(MAKEWORD(2, 2), &wsdata) != 0)
+	{
+		return 1;
+	}
+	SOCKET sock = WSASocket(AF_INET, SOCK_DGRAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 	//然后赋值给地址，用来从网络上的广播地址接收消息；  
 	ServerAddress.sin_family = AF_INET;
 	ServerAddress.sin_addr.s_addr = INADDR_BROADCAST;
@@ -47,13 +46,12 @@ DWORD WINAPI workThread(LPVOID lpParam)
 	bool opt = true;
 	//设置该套接字为广播类型，  
 	setsockopt(sock, SOL_SOCKET, SO_BROADCAST, (char FAR *)&opt, sizeof(opt));
-	int nlen = sizeof(ServerAddress);
 	while (true)
 	{
 		Sleep(1000);
 		//从广播地址发送消息  
 		char *smsg = "我还活着";
-		int ret = sendto(sock, smsg, 256, 0, (sockaddr*)&ServerAddress, nlen);
+		int ret = sendto(sock, smsg, 256, 0, (sockaddr*)&ServerAddress, sizeof(ServerAddress));
 		if (ret == SOCKET_ERROR)
 		{
 			printf("%d \n", WSAGetLastError());

@@ -30,16 +30,14 @@ int main()
 
 DWORD WINAPI workThread(LPVOID lpParam)
 {
-	SOCKET ListenSocket;
 	sockaddr_in ServerAddress, ClientAddress;
 	WSADATA wsdata;
-	bool optval;
 	//启动SOCKET库，版本为2.0  
 	if (WSAStartup(MAKEWORD(2, 2), &wsdata) != 0)
 	{
 		return 1;
 	}
-	optval = true;
+	bool optval = true;
 	//接收广播的地址
 	ClientAddress.sin_family = AF_INET;
 	ClientAddress.sin_addr.s_addr = 0;
@@ -50,7 +48,7 @@ DWORD WINAPI workThread(LPVOID lpParam)
 	ServerAddress.sin_port = htons(8000);
 
 	//用UDP初始化套接字  
-	ListenSocket = socket(AF_INET, SOCK_DGRAM, 0);
+	SOCKET ListenSocket = socket(AF_INET, SOCK_DGRAM, 0);
 	// 设置该套接字为广播类型，  
 	setsockopt(ListenSocket, SOL_SOCKET, SO_BROADCAST, (char FAR *)&optval, sizeof(optval));
 	// 把该套接字绑定在一个具体的地址上  
