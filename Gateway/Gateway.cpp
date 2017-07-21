@@ -628,7 +628,6 @@ DWORD WINAPI workThread(LPVOID lpParam)
 						break;
 					case 'A':
 					{
-						
 						int count = m_arrayServerSocketContext.num;
 						bool online = false;
 						_PER_SOCKET_CONTEXT* cSocketContext = nullptr;
