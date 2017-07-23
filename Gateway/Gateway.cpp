@@ -7,7 +7,7 @@
 
 #define c_LISTEN_PORT 8600
 #define c_MAX_DATA_LENGTH 4096
-#define c_SOCKET_CONTEXT 2048
+#define c_SOCKET_CONTEXT 4096
 #define c_MAX_POST_ACCEPT 10
 
 enum enumIoType
@@ -18,6 +18,62 @@ enum enumIoType
 	NONE,
 	ROOT
 };
+
+class SocketUnit
+{
+public:
+	SOCKET socket;
+	int sum;
+
+	SocketUnit(): sum(0)
+	{
+		socket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
+	}
+
+	SOCKET get()
+	{
+		sum++;
+		return socket;
+	}
+
+	void Release()
+	{
+		sum--;
+		if (sum == 0)
+		{
+			closesocket(socket);
+			socket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
+		}
+	}
+};
+
+class SocketPool
+{
+	SocketUnit* array_socket_unit[c_SOCKET_CONTEXT];
+
+	SocketPool()
+	{
+		for (int i = 0; i < c_SOCKET_CONTEXT; ++i)
+		{
+			SocketUnit* temp = new SocketUnit();
+			*array_socket_unit[i] = *temp;
+		}
+	}
+
+	SocketUnit* GetSocket()
+	{
+		for (int i = 0; i < c_SOCKET_CONTEXT; i++)
+		{
+			if (array_socket_unit[i]->sum != 0)
+			{
+				array_socket_unit[i]->sum++;
+				return array_socket_unit[i];
+			}
+		}
+		return NULL;
+	}
+};
+
 
 //网络操作结构体，包含Overlapped，关联的socket，缓冲区以及这个操作的类型，accpet，received还是send
 struct _PER_IO_CONTEXT
@@ -56,7 +112,6 @@ struct _PER_IO_CONTEXT
 			pPreIoContext->pNextIoContext = NULL;
 		}
 		delete m_szBuffer;
-		ZeroMemory(&m_overlapped, sizeof(m_overlapped));
 		m_socket = NULL;
 		m_IoType = NONE;
 		pPreIoContext = NULL;
@@ -185,6 +240,7 @@ public:
 				m_arrayPerSocketContext[i]->UpTimer();
 				if (m_arrayPerSocketContext[i]->m_timer > 2)
 				{
+					printf("服务器连接超时...\n");
 					num--;
 					m_arrayPerSocketContext[i]->CloseSocketContext();
 					m_arrayPerSocketContext[i] = NULL;
@@ -208,7 +264,6 @@ public:
 				if (!memcmp(&m_arrayPerSocketContext[i]->m_ClientAddr, &client_addr, sizeof(SOCKADDR_IN)))
 				{
 					m_arrayPerSocketContext[i]->ResetTimer();
-					printf("%d", m_arrayPerSocketContext[i]->m_timer);
 					return true;
 				}
 				temp++;
@@ -627,51 +682,51 @@ DWORD WINAPI workThread(LPVOID lpParam)
 						}
 						break;
 					case 'A':
-					{
-						int count = m_arrayServerSocketContext.num;
-						bool online = false;
-						_PER_SOCKET_CONTEXT* cSocketContext = nullptr;
-						for (int i = 0; i < c_SOCKET_CONTEXT; i++)
 						{
-							cSocketContext = m_arrayServerSocketContext.getARR(i);
-							if (count == 0)
+							int count = m_arrayServerSocketContext.num;
+							bool online = false;
+							_PER_SOCKET_CONTEXT* cSocketContext = nullptr;
+							for (int i = 0; i < c_SOCKET_CONTEXT; i++)
 							{
-								break;
-							}
-							if (cSocketContext)
-							{
-								//判断是否是单对单信息
-								if (!strcmp(type, cSocketContext->m_username))
+								cSocketContext = m_arrayServerSocketContext.getARR(i);
+								if (count == 0)
 								{
-									online = true;
 									break;
 								}
-								count--;
+								if (cSocketContext)
+								{
+									//判断是否是单对单信息
+									if (!strcmp(type, cSocketContext->m_username))
+									{
+										online = true;
+										break;
+									}
+									count--;
+								}
 							}
-						}
 
-						_PER_IO_CONTEXT* pNewIoContext = pListenContext->GetNewIoContext();
-						pNewIoContext->m_socket = pListenContext->m_Socket;
-						if (online)
-						{
-							_PER_IO_CONTEXT* pNewSendIoContext = cSocketContext->GetNewIoContext();
-							pNewSendIoContext->m_socket = cSocketContext->m_Socket;
-							// 给这个客户端SocketContext绑定一个Recv的计划
-							strcpy_s(pNewSendIoContext->m_szBuffer, strlen(senddata) + 1, senddata);
-							pNewSendIoContext->m_wsaBuf.len = strlen(senddata) + 1;
-							// Send投递出去
-							_PostSend(pNewSendIoContext);
+							_PER_IO_CONTEXT* pNewIoContext = pListenContext->GetNewIoContext();
+							pNewIoContext->m_socket = pListenContext->m_Socket;
+							if (online)
+							{
+								_PER_IO_CONTEXT* pNewSendIoContext = cSocketContext->GetNewIoContext();
+								pNewSendIoContext->m_socket = cSocketContext->m_Socket;
+								// 给这个客户端SocketContext绑定一个Recv的计划
+								strcpy_s(pNewSendIoContext->m_szBuffer, strlen(senddata) + 1, senddata);
+								pNewSendIoContext->m_wsaBuf.len = strlen(senddata) + 1;
+								// Send投递出去
+								_PostSend(pNewSendIoContext);
 
-							strcpy_s(pNewIoContext->m_szBuffer, 12, "已发送成功");
+								strcpy_s(pNewIoContext->m_szBuffer, 12, "已发送成功");
+							}
+							else
+							{
+								strcpy_s(pNewIoContext->m_szBuffer, 12, "未发送成功");
+							}
+							pNewIoContext->m_wsaBuf.len = 12;
+							_PostSend(pNewIoContext);
 						}
-						else
-						{
-							strcpy_s(pNewIoContext->m_szBuffer, 12, "未发送成功");
-						}
-						pNewIoContext->m_wsaBuf.len = 12;
-						_PostSend(pNewIoContext);
-					}
-					break;
+						break;
 					default:
 
 						bool ok = false;
