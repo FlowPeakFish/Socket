@@ -25,12 +25,13 @@ public:
 	SOCKET socket;
 	int sum;
 
-	SocketUnit(): sum(0)
+	SocketUnit()
 	{
+		sum = 0;
 		socket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 	}
 
-	SOCKET get()
+	SOCKET Get()
 	{
 		sum++;
 		return socket;
@@ -64,7 +65,7 @@ class SocketPool
 	{
 		for (int i = 0; i < c_SOCKET_CONTEXT; i++)
 		{
-			if (array_socket_unit[i]->sum != 0)
+			if (array_socket_unit[i]->sum == 0)
 			{
 				array_socket_unit[i]->sum++;
 				return array_socket_unit[i];
@@ -133,6 +134,9 @@ struct _PER_SOCKET_CONTEXT
 	_PER_IO_CONTEXT* HeadIoContext;
 	int m_timer;
 
+	_PER_SOCKET_CONTEXT* pPreSocketContext;
+	_PER_SOCKET_CONTEXT* pNextSocketContext;
+
 	_PER_SOCKET_CONTEXT()
 	{
 		m_timer = 0;
@@ -141,6 +145,8 @@ struct _PER_SOCKET_CONTEXT
 		ZeroMemory(m_username, 40);
 		HeadIoContext = new _PER_IO_CONTEXT();
 		HeadIoContext->m_IoType = ROOT;
+		pPreSocketContext = NULL;
+		pNextSocketContext = NULL;
 	}
 
 	_PER_IO_CONTEXT* GetNewIoContext()
@@ -361,10 +367,13 @@ int main()
 	}
 
 	// 填充地址信息
+	//	
+
 	ZeroMemory(&ServerAddress, sizeof(ServerAddress));
 	ServerAddress.sin_family = AF_INET;
 	ServerAddress.sin_addr.s_addr = htonl(INADDR_ANY);
 	ServerAddress.sin_port = htons(c_LISTEN_PORT);
+
 
 	// 绑定地址和端口
 	if (bind(g_ListenContext->m_Socket, (LPSOCKADDR)&ServerAddress, sizeof(ServerAddress)) == SOCKET_ERROR)

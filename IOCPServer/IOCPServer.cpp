@@ -94,8 +94,6 @@ struct _PER_SOCKET_CONTEXT
 			HeadIoContext->pNextIoContext->pPreIoContext = temp;
 			temp->pNextIoContext = HeadIoContext->pNextIoContext;
 		}
-		HeadIoContext->pNextIoContext = temp;
-		temp->pPreIoContext = HeadIoContext;
 		return temp;
 	}
 
