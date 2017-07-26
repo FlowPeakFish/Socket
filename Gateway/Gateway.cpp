@@ -117,7 +117,7 @@ public:
 
 	void CloseIoContext()
 	{
-		if(m_IoType!=ROOT)
+		if (m_IoType != ROOT)
 		{
 			if (pNextIoContext)
 			{
@@ -356,11 +356,11 @@ int main()
 	// 初始化线程句柄
 	HANDLE* m_phWorkerThreads = new HANDLE[m_nThreads];
 	// 根据计算出来的数量建立线程
-//	for (int i = 0; i < m_nThreads; i++)
-//	{
-		//m_phWorkerThreads[i] =
+	for (int i = 0; i < m_nThreads; i++)
+	{
+		m_phWorkerThreads[i] =
 			CreateThread(0, 0, workThread, NULL, 0, NULL);
-//	}
+	}
 	printf_s("建立 WorkerThread %d 个.\n", m_nThreads);
 
 	// 服务器地址信息，用于绑定Socket
@@ -562,7 +562,8 @@ DWORD WINAPI workThread(LPVOID lpParam)
 							//通过Socket结构体数组得到一个新的Socket结构体，并将用户信息保存进去
 							_PER_SOCKET_CONTEXT* newSocketContext = m_arraySocketContext->GetNewSocketContext(*pClientAddr, input_username);
 							//将Socket结构体保存到Socket结构体数组中新获得的Socket结构体中
-							newSocketContext->m_SocketUnit->m_Socket = *pIoContext->m_Socket;
+							newSocketContext->m_SocketUnit = pIoContext->m_SocketUnit;
+							newSocketContext->m_Socket = newSocketContext->m_SocketUnit->Get();
 							//将这个新得到的Socket结构体放到完成端口中，有结果告诉我
 							HANDLE hTemp = CreateIoCompletionPort((HANDLE)*newSocketContext->m_Socket, g_hIoCompletionPort, (DWORD)newSocketContext, 0);
 							if (NULL == hTemp)
@@ -679,49 +680,46 @@ DWORD WINAPI workThread(LPVOID lpParam)
 						}
 						break;
 					case 'L':
-					{
-						bool ok = false;
-
-						char* name = strtok_s(pIoContext->m_wsaBuf.buf, "|", &data);
-
-						if (!strcmp(data, "登陆成功！"))
 						{
-							ok = true;
-						}
-						_PER_SOCKET_CONTEXT* cSocketContext = m_arraySocketContext->Find(name);
+							bool ok = false;
 
-						//给这个新得到的Socket结构体绑定一个PostSend操作，将客户端是否登陆成功的结果发送回去，发送操作完成，通知完成端口
+							char* name = strtok_s(data, "|", &data);
 
-						char IpPort[16];
-						inet_ntop(AF_INET, &cSocketContext->m_ClientAddr.sin_addr, IpPort, 16);
-						if (ok)
-						{
-							_PER_IO_CONTEXT* pNewSendIoContext = cSocketContext->GetNewIoContext(SEND);
-							printf_s("客户端 %s(%s:%d) 登陆成功！\n", type, IpPort, ntohs(cSocketContext->m_ClientAddr.sin_port));
-							strcpy_s(pNewSendIoContext->m_szBuffer, strlen(data) + 1, data);
-							pNewSendIoContext->m_wsaBuf.len = strlen(data) + 1;
-
-							_PostSend(pNewSendIoContext);
-							_PER_IO_CONTEXT* pNewRecvIoContext = cSocketContext->GetNewIoContext(SEND);
-							pNewRecvIoContext->m_SocketUnit->m_Socket = *cSocketContext->m_Socket;
-
-							if (!_PostRecv(pNewRecvIoContext))
+							if (!strcmp(data, "登陆成功！"))
 							{
-								pNewRecvIoContext->CloseIoContext();
+								ok = true;
+							}
+							_PER_SOCKET_CONTEXT* cSocketContext = m_arraySocketContext->Find(name);
+
+							//给这个新得到的Socket结构体绑定一个PostSend操作，将客户端是否登陆成功的结果发送回去，发送操作完成，通知完成端口
+
+							char IpPort[16];
+							inet_ntop(AF_INET, &cSocketContext->m_ClientAddr.sin_addr, IpPort, 16);
+							if (ok)
+							{
+								_PER_IO_CONTEXT* pNewSendIoContext = cSocketContext->GetNewIoContext(SEND);
+								printf_s("客户端 %s(%s:%d) 登陆成功！\n", type, IpPort, ntohs(cSocketContext->m_ClientAddr.sin_port));
+								strcpy_s(pNewSendIoContext->m_szBuffer, strlen(data) + 1, data);
+								pNewSendIoContext->m_wsaBuf.len = strlen(data) + 1;
+
+								_PostSend(pNewSendIoContext);
+								_PER_IO_CONTEXT* pNewRecvIoContext = cSocketContext->GetNewIoContext(RECV);
+								if (!_PostRecv(pNewRecvIoContext))
+								{
+									pNewRecvIoContext->CloseIoContext();
+								}
+							}
+							else
+							{
+								_PER_IO_CONTEXT* pNewSendIoContext = cSocketContext->GetNewIoContext(NONE);
+								printf_s("客户端 %s(%s:%d) 登陆失败！\n", type, IpPort, ntohs(cSocketContext->m_ClientAddr.sin_port));
+								strcpy_s(pNewSendIoContext->m_szBuffer, strlen(data) + 1, data);
+								pNewSendIoContext->m_wsaBuf.len = strlen(data) + 1;
+								_PostSend(pNewSendIoContext);
 							}
 						}
-						else
-						{
-							_PER_IO_CONTEXT* pNewSendIoContext = cSocketContext->GetNewIoContext(NONE);
-							printf_s("客户端 %s(%s:%d) 登陆失败！\n", type, IpPort, ntohs(cSocketContext->m_ClientAddr.sin_port));
-							strcpy_s(pNewSendIoContext->m_szBuffer, strlen(data) + 1, data);
-							pNewSendIoContext->m_wsaBuf.len = strlen(data) + 1;
-							_PostSend(pNewSendIoContext);
-						}
-					}
-					break;
+						break;
 					default:
-
 						break;
 					}
 					_PostRecv(pIoContext);
