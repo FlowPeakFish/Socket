@@ -20,25 +20,28 @@ enum enumIoType
 	ROOT
 };
 
+//引用基类
 class SocketUnit
 {
-private:
-	volatile int m_sharedCount;
 public:
+	volatile int m_sharedCount; //引用计数
 	SOCKET m_Socket;
 
+	//初始化
 	SocketUnit()
 	{
 		m_Socket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 		m_sharedCount = 0;
 	}
 
+	//获得一个的Socket，并将引用计数减一
 	SOCKET* Get()
 	{
 		m_sharedCount++;
 		return &m_Socket;
 	}
 
+	//释放一个的Socket，将引用计数减一，当为零时，关闭Socket重置
 	void Release()
 	{
 		m_sharedCount--;
@@ -50,14 +53,16 @@ public:
 	}
 };
 
-class SocketPool
+
+class SocketUnitPool
 {
 private:
-	volatile int num;
+	volatile int num; //总数
 public:
 	SocketUnit* array_socket_unit[c_SOCKET_CONTEXT];
 
-	SocketPool(): num(c_SOCKET_CONTEXT)
+	// 初始化
+	SocketUnitPool(): num(c_SOCKET_CONTEXT)
 	{
 		for (int i = 0; i < c_SOCKET_CONTEXT; ++i)
 		{
@@ -65,24 +70,25 @@ public:
 		}
 	}
 
+	// 获得一个Socket
 	SocketUnit* GetSocketUnit()
 	{
-		num--;
-		if (num > 0)
+		for (int i = 0; i < num; ++i)
 		{
-			return array_socket_unit[num];
+			if (array_socket_unit[i]->m_sharedCount == 0)
+			{
+				return array_socket_unit[i];
+			}
 		}
 		return NULL;
 	}
 };
 
-SocketPool* g_poolSocket;
+SocketUnitPool* g_poolSocket;
 
-
-//网络操作结构体，包含Overlapped，关联的socket，缓冲区以及这个操作的类型，accpet，received还是send
+//网络操作类型，包含Overlapped，关联的socket，缓冲区以及这个操作的类型，accpet，received还是send
 class _PER_IO_CONTEXT
 {
-private:
 public:
 	SocketUnit* m_SocketUnit;
 	SOCKET* m_Socket; // 这个网络操作所使用的Socket
@@ -91,9 +97,10 @@ public:
 	char* m_szBuffer; // 这个是WSABUF里具体存字符的缓冲区
 	enumIoType m_IoType; // 标识网络操作的类型(对应上面的枚举)
 
-	_PER_IO_CONTEXT* pPreIoContext;
-	_PER_IO_CONTEXT* pNextIoContext;
+	_PER_IO_CONTEXT* pPreIoContext;  //指向上一个网络操作
+	_PER_IO_CONTEXT* pNextIoContext;  //指向下一个网络操作
 
+	//传入Socket引用基类和网络操作类型
 	_PER_IO_CONTEXT(SocketUnit* p, enumIoType type)
 	{
 		m_SocketUnit = p;
@@ -105,14 +112,14 @@ public:
 		{
 			m_Socket = m_SocketUnit->Get();
 		}
+		//m_overlapped.InternalHigh = 0;
 		ZeroMemory(&m_overlapped, sizeof(m_overlapped));
 		m_szBuffer = new char[c_MAX_DATA_LENGTH];
-		ZeroMemory(m_szBuffer, c_MAX_DATA_LENGTH);
 		m_wsaBuf.buf = m_szBuffer;
 		m_wsaBuf.len = c_MAX_DATA_LENGTH;
 		m_IoType = type;
-		pPreIoContext = NULL;
-		pNextIoContext = NULL;
+		pPreIoContext = nullptr;
+		pNextIoContext = nullptr;
 	}
 
 	void CloseIoContext()
@@ -126,14 +133,14 @@ public:
 			}
 			else
 			{
-				pPreIoContext->pNextIoContext = NULL;
+				pPreIoContext->pNextIoContext = nullptr;
 			}
 			delete m_szBuffer;
 		}
 		m_SocketUnit->Release();
 		m_IoType = NONE;
-		pPreIoContext = NULL;
-		pNextIoContext = NULL;
+		pPreIoContext = nullptr;
+		pNextIoContext = nullptr;
 	}
 };
 
@@ -151,6 +158,7 @@ public:
 	_PER_SOCKET_CONTEXT* pPreSocketContext;
 	_PER_SOCKET_CONTEXT* pNextSocketContext;
 
+	//传入一个从池中获得的Socket引用基类，进行初始化
 	_PER_SOCKET_CONTEXT(SocketUnit* p)
 	{
 		m_SocketUnit = p;
@@ -159,10 +167,11 @@ public:
 		memset(&m_ClientAddr, 0, sizeof(m_ClientAddr));
 		ZeroMemory(m_username, 40);
 		HeadIoContext = new _PER_IO_CONTEXT(m_SocketUnit, ROOT);
-		pPreSocketContext = NULL;
-		pNextSocketContext = NULL;
+		pPreSocketContext = nullptr;
+		pNextSocketContext = nullptr;
 	}
 
+	//传入网络操作类型，初始化一个网络操作
 	_PER_IO_CONTEXT* GetNewIoContext(enumIoType type)
 	{
 		_PER_IO_CONTEXT* temp = new _PER_IO_CONTEXT(m_SocketUnit, type);
@@ -186,10 +195,10 @@ public:
 				HeadIoContext->pNextIoContext->CloseIoContext();
 			}
 			HeadIoContext->CloseIoContext();
-			HeadIoContext = NULL;
+			HeadIoContext = nullptr;
 			m_timer = 0;
 			m_SocketUnit->Release();
-			m_Socket = NULL;
+			m_Socket = nullptr;
 
 			if (pNextSocketContext)
 			{
@@ -198,19 +207,21 @@ public:
 			}
 			else
 			{
-				pPreSocketContext->pNextSocketContext = NULL;
+				pPreSocketContext->pNextSocketContext = nullptr;
 			}
 
-			pPreSocketContext = NULL;
-			pNextSocketContext = NULL;
+			pPreSocketContext = nullptr;
+			pNextSocketContext = nullptr;
 		}
 	}
 
+	//更新延时次数
 	void UpTimer()
 	{
 		m_timer++;
 	}
 
+	//重置延时次数
 	void ResetTimer()
 	{
 		m_timer = 0;
@@ -225,12 +236,14 @@ private:
 public:
 	volatile int num;
 
+	//从池中获取一个socket初始化一个socketcontext当做头结点
 	ARRAY_PER_SOCKET_CONTEXT(): num(0)
 	{
 		SocketUnit* p = g_poolSocket->GetSocketUnit();
 		HeadSocketContext = new _PER_SOCKET_CONTEXT(p);
 	}
 
+	//传入连入客户端/服务端名字和地址，初始化一个socketcontext返回
 	_PER_SOCKET_CONTEXT* GetNewSocketContext(SOCKADDR_IN pAddressPort, char* szUserName)
 	{
 		_PER_SOCKET_CONTEXT* temp = new _PER_SOCKET_CONTEXT(g_poolSocket->GetSocketUnit());
@@ -249,13 +262,14 @@ public:
 		return temp;
 	}
 
-	_PER_SOCKET_CONTEXT* Find(char* type)
+	//根据name查找socketcontext并返回
+	_PER_SOCKET_CONTEXT* Find(char* name)
 	{
 		_PER_SOCKET_CONTEXT* temp = HeadSocketContext;
 		while (temp->pNextSocketContext)
 		{
 			temp = temp->pNextSocketContext;
-			if (!strcmp(type, temp->m_username))
+			if (!strcmp(name, temp->m_username))
 			{
 				return temp;
 			}
@@ -263,6 +277,7 @@ public:
 		return NULL;
 	};
 
+	//对所有服务器socket延时计数加一，大于2时，表示掉线
 	void UpTimer()
 	{
 		_PER_SOCKET_CONTEXT* temp = HeadSocketContext;
@@ -279,6 +294,7 @@ public:
 		}
 	}
 
+	//查看是否连接服务器
 	bool ContainAddr(SOCKADDR_IN client_addr)
 	{
 		_PER_SOCKET_CONTEXT* temp = HeadSocketContext;
@@ -337,7 +353,7 @@ int main()
 		return 1;
 	}
 
-	g_poolSocket = new SocketPool();
+	g_poolSocket = new SocketUnitPool();
 	m_arraySocketContext = new ARRAY_PER_SOCKET_CONTEXT();
 	m_arrayServerSocketContext = new ARRAY_PER_SOCKET_CONTEXT();
 
@@ -392,14 +408,14 @@ int main()
 	if (bind(*g_ListenContext->m_Socket, (LPSOCKADDR)&ServerAddress, sizeof(ServerAddress)) == SOCKET_ERROR)
 	{
 		printf_s("bind()函数执行错误.\n");
-		return 4;
+		return 3;
 	}
 
 	// 开始对这个ListenContext里面的socket所绑定的地址端口进行监听
 	if (listen(*g_ListenContext->m_Socket, SOMAXCONN) == SOCKET_ERROR)
 	{
 		printf_s("Listen()函数执行出现错误.\n");
-		return 5;
+		return 4;
 	}
 
 	DWORD dwBytes = 0;
@@ -416,7 +432,7 @@ int main()
 		NULL))
 	{
 		printf_s("WSAIoctl 未能获取AcceptEx函数指针。错误代码: %d\n", WSAGetLastError());
-		return 6;
+		return 5;
 	}
 
 	//使用WSAIoctl，通过GuidGetAcceptExSockAddrs(AcceptExSockaddrs的GUID)，获取AcceptExSockaddrs函数指针
@@ -432,7 +448,7 @@ int main()
 		NULL))
 	{
 		printf_s("WSAIoctl 未能获取GuidGetAcceptExSockAddrs函数指针。错误代码: %d\n", WSAGetLastError());
-		return 7;
+		return 6;
 	}
 
 	//将这个将ListenSocket结构体放到完成端口中，有结果告诉我，并将监听ListenContext传进去
@@ -444,7 +460,7 @@ int main()
 			closesocket(*g_ListenContext->m_Socket);
 			*g_ListenContext->m_Socket = INVALID_SOCKET;
 		}
-		return 3;
+		return 7;
 	}
 	printf_s("Listen Socket绑定完成端口 完成.\n");
 
@@ -458,7 +474,7 @@ int main()
 		if (_PostAccept(newAcceptIoContext) == false)
 		{
 			newAcceptIoContext->CloseIoContext();
-			return 4;
+			return 8;
 		}
 	}
 	printf_s("投递 %d 个AcceptEx请求完毕 \n", c_MAX_POST_ACCEPT);
@@ -529,6 +545,8 @@ DWORD WINAPI workThread(LPVOID lpParam)
 		}
 		else
 		{
+			pIoContext->m_szBuffer[dwBytesTransfered] = 0x00;
+
 			//判断这个网络操作的类型
 			switch (pIoContext->m_IoType)
 			{
@@ -698,7 +716,7 @@ DWORD WINAPI workThread(LPVOID lpParam)
 							if (ok)
 							{
 								_PER_IO_CONTEXT* pNewSendIoContext = cSocketContext->GetNewIoContext(SEND);
-								printf_s("客户端 %s(%s:%d) 登陆成功！\n", type, IpPort, ntohs(cSocketContext->m_ClientAddr.sin_port));
+								printf_s("客户端 %s(%s:%d) 登陆成功！\n", name, IpPort, ntohs(cSocketContext->m_ClientAddr.sin_port));
 								strcpy_s(pNewSendIoContext->m_szBuffer, strlen(data) + 1, data);
 								pNewSendIoContext->m_wsaBuf.len = strlen(data) + 1;
 
