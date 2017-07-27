@@ -153,7 +153,7 @@ public:
 	SOCKET* m_Socket; // 每一个客户端连接的Socket
 	SOCKADDR_IN m_ClientAddr; // 客户端的地址
 	char m_username[40];
-	int m_timer; //心跳反应计数
+	volatile int m_timer; //心跳反应计数
 
 	_PER_SOCKET_CONTEXT* pPreSocketContext;
 	_PER_SOCKET_CONTEXT* pNextSocketContext;
