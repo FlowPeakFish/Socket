@@ -171,7 +171,7 @@ char* g_saPassword[3] = {"adminadmin","rootroot" ,"zzzz"};
 HANDLE g_hIoCompletionPort;
 
 //创建一个Socket结构体数组的句柄
-ARRAY_PER_SOCKET_CONTEXT m_arraySocketContext;
+ARRAY_PER_SOCKET_CONTEXT* m_arraySocketContext;
 
 //AcceptEx的GUID，用于导出AcceptEx函数指针
 GUID GuidAcceptEx = WSAID_ACCEPTEX;

@@ -3,7 +3,6 @@
 #include "winsock2.h"
 #include "ws2tcpip.h"
 #include "mswsock.h"
-#include <algorithm>
 #pragma comment(lib,"ws2_32.lib")
 
 #define c_LISTEN_PORT 8600
@@ -633,19 +632,19 @@ DWORD WINAPI workThread(LPVOID lpParam)
 							{
 								ok = true;
 							}
-							_PER_SOCKET_CONTEXT* ClientSocketContext = m_arraySocketContext->Find(name);
+							_PER_SOCKET_CONTEXT* pNewClientSocketContext = m_arraySocketContext->Find(name);
 
 							//给这个新得到的Socket结构体绑定一个PostSend操作，将客户端是否登陆成功的结果发送回去，发送操作完成，通知完成端口
 
 							if (ok)
 							{
-								_PER_IO_CONTEXT* pClientSendIoContext = ClientSocketContext->GetNewIoContext(SEND);
-								printf_s("客户端 %s(%s:%d) 登陆成功！\n", name, IPAddr, ntohs(ClientSocketContext->m_ClientAddr.sin_port));
+								_PER_IO_CONTEXT* pClientSendIoContext = pNewClientSocketContext->GetNewIoContext(SEND);
+								printf_s("客户端 %s(%s:%d) 登陆成功！\n", name, IPAddr, ntohs(pNewClientSocketContext->m_ClientAddr.sin_port));
 								strcpy_s(pClientSendIoContext->m_szBuffer, strlen(data) + 1, data);
 								pClientSendIoContext->m_wsaBuf.len = strlen(data) + 1;
 								_PostSend(pClientSendIoContext);
 
-								_PER_IO_CONTEXT* pNewClientRecvIoContext = ClientSocketContext->GetNewIoContext(RECV);
+								_PER_IO_CONTEXT* pNewClientRecvIoContext = pNewClientSocketContext->GetNewIoContext(RECV);
 								if (!_PostRecv(pNewClientRecvIoContext))
 								{
 									pNewClientRecvIoContext->CloseIoContext();
@@ -653,8 +652,8 @@ DWORD WINAPI workThread(LPVOID lpParam)
 							}
 							else
 							{
-								_PER_IO_CONTEXT* pClientSendIoContext = ClientSocketContext->GetNewIoContext(NONE);
-								printf_s("客户端 %s(%s:%d) 登陆失败！\n", type, IPAddr, ntohs(ClientSocketContext->m_ClientAddr.sin_port));
+								_PER_IO_CONTEXT* pClientSendIoContext = pNewClientSocketContext->GetNewIoContext(NONE);
+								printf_s("客户端 %s(%s:%d) 登陆失败！\n", type, IPAddr, ntohs(pNewClientSocketContext->m_ClientAddr.sin_port));
 								strcpy_s(pClientSendIoContext->m_szBuffer, strlen(data) + 1, data);
 								pClientSendIoContext->m_wsaBuf.len = strlen(data) + 1;
 								_PostSend(pClientSendIoContext);
