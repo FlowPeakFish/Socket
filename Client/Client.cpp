@@ -42,7 +42,7 @@ int main()
 		printf("请输入密码：");
 		gets_s(password);
 
-		sprintf_s(senddata, sizeof(senddata), "LOGIN|%s#%s", username, password);
+		sprintf_s(senddata, sizeof(senddata), "10|%s#%s", username, password);
 
 		SOCKET sclient = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 		if (sclient == INVALID_SOCKET)
@@ -61,7 +61,6 @@ int main()
 			closesocket(sclient);
 			return 3;
 		}
-
 		send(sclient, senddata, strlen(senddata), 0);
 
 		char recData[255];
@@ -90,7 +89,7 @@ int main()
 				continue;
 			}
 
-			sprintf_s(senddata, sizeof(senddata), "CHAT|%s", data);
+			sprintf_s(senddata, sizeof(senddata), "20|%s", data);
 			send(sclient, senddata, strlen(senddata), 0);
 		}
 		closesocket(sclient);

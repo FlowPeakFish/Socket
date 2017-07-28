@@ -461,7 +461,7 @@ DWORD WINAPI workThread(LPVOID lpParam)
 						{
 							inet_ntop(AF_INET, &pClientAddr->sin_addr, IpPort, 16);
 							printf_s("%s服务器(%s:%d)连接成功！\n", type, IpPort, ntohs(pClientAddr->sin_port));
-							strcpy_s(pNewSendIoContext->m_szBuffer, 10, "G|成功！");
+							strcpy_s(pNewSendIoContext->m_szBuffer, 10, "00|成功！");
 							pNewSendIoContext->m_wsaBuf.len = 10;
 
 							_PostSend(pNewSendIoContext);
@@ -479,7 +479,7 @@ DWORD WINAPI workThread(LPVOID lpParam)
 						{
 							inet_ntop(AF_INET, &pClientAddr->sin_addr, IpPort, 16);
 							printf_s("未知服务器(%s:%d)连接成功连接失败！\n", IpPort, ntohs(pClientAddr->sin_port));
-							strcpy_s(pNewSendIoContext->m_szBuffer, 10, "G|失败！");
+							strcpy_s(pNewSendIoContext->m_szBuffer, 10, "00|失败！");
 							pNewSendIoContext->m_wsaBuf.len = 10;
 							_PostEnd(pNewSendIoContext);
 						}
@@ -533,14 +533,14 @@ DWORD WINAPI workThread(LPVOID lpParam)
 					if (ok)
 					{
 						printf_s("客户端%s登陆成功！\n", userid);
-						sprintf_s(Senddata, c_MAX_DATA_LENGTH, "L|%s|%s", userid, "登陆成功！");
+						sprintf_s(Senddata, c_MAX_DATA_LENGTH, "12|%s|%s", userid, "登陆成功！");
 						strcpy_s(pNewSendIoContext->m_szBuffer, strlen(Senddata) + 1, Senddata);
 						pNewSendIoContext->m_wsaBuf.len = strlen(Senddata) + 1;
 					}
 					else
 					{
 						printf_s("客户端%s登陆失败！\n", userid);
-						sprintf_s(Senddata, c_MAX_DATA_LENGTH, "L|%s|%s", userid, "登陆失败！");
+						sprintf_s(Senddata, c_MAX_DATA_LENGTH, "12|%s|%s", userid, "登陆失败！");
 						strcpy_s(pNewSendIoContext->m_szBuffer, strlen(Senddata) + 1, Senddata);
 						pNewSendIoContext->m_wsaBuf.len = strlen(Senddata) + 1;
 					}

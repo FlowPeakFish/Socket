@@ -544,15 +544,16 @@ DWORD WINAPI workThread(LPVOID lpParam)
 					m_AcceptExSockAddrs(pIoContext->m_wsaBuf.buf, pIoContext->m_wsaBuf.len - ((sizeof(SOCKADDR_IN) + 16) * 2),
 					                    sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, (LPSOCKADDR*)&pLocalAddr, &localLen, (LPSOCKADDR*)&pClientAddr, &remoteLen);
 
+					inet_ntop(AF_INET, &pClientAddr->sin_addr, IPAddr, 16);
 					printf_s("客户端 %s:%d 连接.\n", IPAddr, ntohs(pClientAddr->sin_port));
 
 					char* data = new char[40];
 
 					char* type = strtok_s(pIoContext->m_wsaBuf.buf, "|", &data);
 
-					switch (type[0])
+					switch (atoi(type))
 					{
-					case 'L':
+					case 10:
 						{
 							//接收的密码
 							char* input_password = new char[40];
@@ -562,24 +563,24 @@ DWORD WINAPI workThread(LPVOID lpParam)
 
 							//无论是否登陆成功，都要反馈一个结果给客户端 登陆成功 or 登陆失败
 							//通过Socket结构体数组得到一个新的Socket结构体，并将用户信息保存进去
-							_PER_SOCKET_CONTEXT* newSocketContext = m_arraySocketContext->GetNewSocketContext(*pClientAddr, input_username);
+							_PER_SOCKET_CONTEXT* pNewClientSocketContext = m_arraySocketContext->GetNewSocketContext(*pClientAddr, input_username);
 							//将Socket结构体保存到Socket结构体数组中新获得的Socket结构体中
-							newSocketContext->m_SocketUnit = pIoContext->m_SocketUnit;
-							newSocketContext->m_Socket = newSocketContext->m_SocketUnit->Get();
+							pNewClientSocketContext->m_SocketUnit = pIoContext->m_SocketUnit;
+							pNewClientSocketContext->m_Socket = pNewClientSocketContext->m_SocketUnit->Get();
 							//将这个新得到的Socket结构体放到完成端口中，有结果告诉我
-							HANDLE hTemp = CreateIoCompletionPort((HANDLE)*newSocketContext->m_Socket, g_hIoCompletionPort, (DWORD)newSocketContext, 0);
+							HANDLE hTemp = CreateIoCompletionPort((HANDLE)*pNewClientSocketContext->m_Socket, g_hIoCompletionPort, (DWORD)pNewClientSocketContext, 0);
 							if (NULL == hTemp)
 							{
 								printf_s("执行CreateIoCompletionPort出现错误.错误代码: %d \n", GetLastError());
 								break;
 							}
 
-							_PER_SOCKET_CONTEXT* cSocketContext = m_arrayServerSocketContext->Find(type);
+							_PER_SOCKET_CONTEXT* pServerSocketContext = m_arrayServerSocketContext->Find("LOGIN");
 
 							char* Senddata = new char[c_MAX_DATA_LENGTH];
-							if (cSocketContext)
+							if (pServerSocketContext)
 							{
-								_PER_IO_CONTEXT* pNewSendIoContext = cSocketContext->GetNewIoContext(SEND);
+								_PER_IO_CONTEXT* pNewSendIoContext = pServerSocketContext->GetNewIoContext(SEND);
 								sprintf_s(Senddata, c_MAX_DATA_LENGTH, "%s|%s#%s", input_username, input_username, input_password);
 								strcpy_s(pNewSendIoContext->m_szBuffer, strlen(Senddata) + 1, Senddata);
 								pNewSendIoContext->m_wsaBuf.len = strlen(Senddata) + 1;
@@ -588,15 +589,15 @@ DWORD WINAPI workThread(LPVOID lpParam)
 							}
 							else
 							{
-								_PER_IO_CONTEXT* pNewSendIoContext = newSocketContext->GetNewIoContext(NONE);
+								_PER_IO_CONTEXT* pClientSendIoContext = pNewClientSocketContext->GetNewIoContext(NONE);
 								char IpPort[16];
-								inet_ntop(AF_INET, &newSocketContext->m_ClientAddr.sin_addr, IpPort, 16);
-								printf_s("客户端 %s(%s:%d) 登陆失败！\n", type, IpPort, ntohs(newSocketContext->m_ClientAddr.sin_port));
+								inet_ntop(AF_INET, &pNewClientSocketContext->m_ClientAddr.sin_addr, IpPort, 16);
+								printf_s("客户端 %s(%s:%d) 登陆失败！\n", type, IpPort, ntohs(pNewClientSocketContext->m_ClientAddr.sin_port));
 								sprintf_s(Senddata, c_MAX_DATA_LENGTH, "登陆失败！");
-								strcpy_s(pNewSendIoContext->m_szBuffer, strlen(Senddata) + 1, Senddata);
-								pNewSendIoContext->m_wsaBuf.len = strlen(Senddata) + 1;
+								strcpy_s(pClientSendIoContext->m_szBuffer, strlen(Senddata) + 1, Senddata);
+								pClientSendIoContext->m_wsaBuf.len = strlen(Senddata) + 1;
 								// Send投递出去
-								_PostSend(pNewSendIoContext);
+								_PostSend(pClientSendIoContext);
 							}
 						}
 						break;
@@ -615,42 +616,14 @@ DWORD WINAPI workThread(LPVOID lpParam)
 					char* data = new char[c_MAX_DATA_LENGTH];
 					//ZeroMemory(data, c_MAX_DATA_LENGTH);
 					char* type = strtok_s(pIoContext->m_wsaBuf.buf, "|", &data);
-
-					switch (type[0])
+					switch (atoi(type))
 					{
-					case 'G':
+					case 0:
 						{
 							printf_s("连接%s服务器(%s:%d)%s\n", pSocketContext->m_username, IPAddr, ntohs(pSocketContext->m_ClientAddr.sin_port), data);
 						}
 						break;
-					case 'C':
-						{
-							inet_ntop(AF_INET, &pSocketContext->m_ClientAddr.sin_addr, IPAddr, 16);
-							printf_s("客户端 %s(%s:%d) 向大家发送:%s\n", pSocketContext->m_username, IPAddr, ntohs(pSocketContext->m_ClientAddr.sin_port), data);
-							sprintf_s(Senddata, c_MAX_DATA_LENGTH, "%s(%s:%d)向大家发送:\n%s", pSocketContext->m_username, IPAddr, ntohs(pSocketContext->m_ClientAddr.sin_port), data);
-
-							_PER_SOCKET_CONTEXT* ServerSocketContext = m_arrayServerSocketContext->Find(type);
-
-							_PER_IO_CONTEXT* pNewClientIoContext = pSocketContext->GetNewIoContext(SEND);
-							if (ServerSocketContext)
-							{
-								_PER_IO_CONTEXT* pNewServerSendIoContext = ServerSocketContext->GetNewIoContext(SEND);
-								// 给这个客户端SocketContext绑定一个Recv的计划
-								strcpy_s(pNewServerSendIoContext->m_szBuffer, strlen(Senddata) + 1, Senddata);
-								pNewServerSendIoContext->m_wsaBuf.len = strlen(Senddata) + 1;
-								_PostSend(pNewServerSendIoContext);
-
-								strcpy_s(pNewClientIoContext->m_szBuffer, 12, "已发送成功");
-							}
-							else
-							{
-								strcpy_s(pNewClientIoContext->m_szBuffer, 12, "未发送成功");
-							}
-							pNewClientIoContext->m_wsaBuf.len = 12;
-							_PostSend(pNewClientIoContext);
-						}
-						break;
-					case 'L':
+					case 12:
 						{
 							bool ok = false;
 
@@ -666,11 +639,11 @@ DWORD WINAPI workThread(LPVOID lpParam)
 
 							if (ok)
 							{
-								_PER_IO_CONTEXT* pNewClientSendIoContext = ClientSocketContext->GetNewIoContext(SEND);
+								_PER_IO_CONTEXT* pClientSendIoContext = ClientSocketContext->GetNewIoContext(SEND);
 								printf_s("客户端 %s(%s:%d) 登陆成功！\n", name, IPAddr, ntohs(ClientSocketContext->m_ClientAddr.sin_port));
-								strcpy_s(pNewClientSendIoContext->m_szBuffer, strlen(data) + 1, data);
-								pNewClientSendIoContext->m_wsaBuf.len = strlen(data) + 1;
-								_PostSend(pNewClientSendIoContext);
+								strcpy_s(pClientSendIoContext->m_szBuffer, strlen(data) + 1, data);
+								pClientSendIoContext->m_wsaBuf.len = strlen(data) + 1;
+								_PostSend(pClientSendIoContext);
 
 								_PER_IO_CONTEXT* pNewClientRecvIoContext = ClientSocketContext->GetNewIoContext(RECV);
 								if (!_PostRecv(pNewClientRecvIoContext))
@@ -680,12 +653,39 @@ DWORD WINAPI workThread(LPVOID lpParam)
 							}
 							else
 							{
-								_PER_IO_CONTEXT* pNewClientSendIoContext = ClientSocketContext->GetNewIoContext(NONE);
+								_PER_IO_CONTEXT* pClientSendIoContext = ClientSocketContext->GetNewIoContext(NONE);
 								printf_s("客户端 %s(%s:%d) 登陆失败！\n", type, IPAddr, ntohs(ClientSocketContext->m_ClientAddr.sin_port));
-								strcpy_s(pNewClientSendIoContext->m_szBuffer, strlen(data) + 1, data);
-								pNewClientSendIoContext->m_wsaBuf.len = strlen(data) + 1;
-								_PostSend(pNewClientSendIoContext);
+								strcpy_s(pClientSendIoContext->m_szBuffer, strlen(data) + 1, data);
+								pClientSendIoContext->m_wsaBuf.len = strlen(data) + 1;
+								_PostSend(pClientSendIoContext);
 							}
+						}
+						break;
+					case 20:
+						{
+							inet_ntop(AF_INET, &pSocketContext->m_ClientAddr.sin_addr, IPAddr, 16);
+							printf_s("客户端 %s(%s:%d) 向大家发送:%s\n", pSocketContext->m_username, IPAddr, ntohs(pSocketContext->m_ClientAddr.sin_port), data);
+							sprintf_s(Senddata, c_MAX_DATA_LENGTH, "%s(%s:%d)向大家发送:\n%s", pSocketContext->m_username, IPAddr, ntohs(pSocketContext->m_ClientAddr.sin_port), data);
+
+							_PER_SOCKET_CONTEXT* ServerSocketContext = m_arrayServerSocketContext->Find("CHAT");
+
+							_PER_IO_CONTEXT* pClientSendIoContext = pSocketContext->GetNewIoContext(SEND);
+							if (ServerSocketContext)
+							{
+								_PER_IO_CONTEXT* pNewServerSendIoContext = ServerSocketContext->GetNewIoContext(SEND);
+								// 给这个客户端SocketContext绑定一个Recv的计划
+								strcpy_s(pNewServerSendIoContext->m_szBuffer, strlen(Senddata) + 1, Senddata);
+								pNewServerSendIoContext->m_wsaBuf.len = strlen(Senddata) + 1;
+								_PostSend(pNewServerSendIoContext);
+
+								strcpy_s(pClientSendIoContext->m_szBuffer, 12, "已发送成功");
+							}
+							else
+							{
+								strcpy_s(pClientSendIoContext->m_szBuffer, 12, "未发送成功");
+							}
+							pClientSendIoContext->m_wsaBuf.len = 12;
+							_PostSend(pClientSendIoContext);
 						}
 						break;
 					default:
