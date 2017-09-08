@@ -52,7 +52,6 @@ public:
 	}
 };
 
-
 class SocketUnitPool
 {
 private:
